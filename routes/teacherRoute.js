@@ -8,4 +8,4 @@ router.get('/get-teacher', getTeacherById);
 router.post('/add', addTeacher);
 
 
-export default router
+export default router;

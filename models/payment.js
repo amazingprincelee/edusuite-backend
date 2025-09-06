@@ -10,22 +10,22 @@ const paymentSchema = new mongoose.Schema({
 
   feeType: {
     type: String,
-    enum: ["Tuition", "Admission", "Exam", "Party", "Other"],
+    enum: ["tuition", "admission", "exam", "party", "others"],
     required: true
   },
 
   description: { type: String }, // e.g. "First Term Tuition 2024/2025"
 
   session: { type: String, required: true }, // e.g., "2024/2025"
-  term: { type: String, enum: ["First", "Second", "Third"], required: true },
+  term: { type: String, enum: ["first", "second", "third"], required: true },
 
-  totalAmount: { type: Number, required: true }, 
+  totalAmount: { type: Number }, 
 
   installments: [
     {
       amount: { type: Number, required: true },
       date: { type: Date, default: Date.now },
-      method: { type: String, enum: ["Bank Transfer", "POS", "Online"], default: "Bank Transfer" },
+      method: { type: String, enum: ["bank transfer", "pos", "online", "cash"], default: "bank transfer" },
       reference: { type: String } // e.g. transaction receipt upload from cloudinary
     }
   ],
@@ -36,8 +36,8 @@ const paymentSchema = new mongoose.Schema({
 
   status: { 
     type: String, 
-    enum: ["Pending", "Part Payment", "Paid"], 
-    default: "Pending" 
+    enum: ["pending", "part payment", "paid"], 
+    default: "pending" 
   },
 
   createdAt: { type: Date, default: Date.now },
@@ -49,9 +49,9 @@ paymentSchema.pre("save", function (next) {
   const paid = this.installments.reduce((sum, inst) => sum + inst.amount, 0);
   this.balance = this.totalAmount - paid;
 
-  if (paid === 0) this.status = "Pending";
-  else if (paid < this.totalAmount) this.status = "Part Payment";
-  else this.status = "Paid";
+  if (paid === 0) this.status = "pending";
+  else if (paid < this.totalAmount) this.status = "part payment";
+  else this.status = "paid";
 
   next();
 });
