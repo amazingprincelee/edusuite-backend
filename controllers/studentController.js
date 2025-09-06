@@ -131,25 +131,46 @@ export const getStudentById = async (req, res) => {
   }
 };
 
-export const uploadPhoto = async (req, res) => {
+export const uploadImage = async (req, res) => {
   try {
-    const { photoImage, studentId } = req.body;
-
+    const studentId  = req.params.studentId;
+    
     const student = await Student.findById(studentId);
 
     if (!student) {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    const imageUrl = await upload(photoImage, student._id);
+    if(req.files && req.files.image){
+        const  { image } = req.files
+        const fileTypes = ['image.jpeg', 'image/png', 'image/jpg']
+        const imageSize = 1024
 
-    student.profilePicture = imageUrl;
+        //validate image type
+        if(!fileTypes.includes(image.mimetype)){
+            return res.status(400).json({success: false, error: "image should be jpeg, jpg or png"})
+        }
 
-    student.save();
+        //Validate image size
+        if(image.size / 1024 > imageSize){
+            return res.status(400).json({success: false, error: `Image size is greater than ${imageSize}`})
+        }
+
+        const imageUrl = await upload(image.tempFilePath, student._id);
+
+        console.log(imageUrl);
+        
+
+        student.profilePicture = imageUrl;
+    }
+
+    
 
     res
       .status(200)
       .json({ message: "Saved image", profilePicture: student.profilePicture });
+
+      
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }

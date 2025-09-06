@@ -1,5 +1,5 @@
 import express from 'express';
-import { addStudent, getStudents, getStudentById, getStudentByClass } from "../controllers/studentController.js"
+import { addStudent, getStudents, getStudentById, getStudentByClass, uploadImage } from "../controllers/studentController.js"
 const router = express.Router();
 
 
@@ -8,6 +8,7 @@ router.get('/all',  getStudents);
 router.get('/id/:studentId',  getStudentById);
 router.get('/class/:classLevel',  getStudentByClass);
 router.post('/add',  addStudent);
+router.post("/upload-image/:studentId", uploadImage);
 
 
 export default router;

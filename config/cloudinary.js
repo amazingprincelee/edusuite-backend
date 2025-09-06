@@ -1,5 +1,9 @@
+import "dotenv/config";
 import {v2 as cloudinary} from "cloudinary";
-import { date } from "yup";
+
+
+
+
 
 cloudinary.config(
     {
@@ -13,12 +17,20 @@ cloudinary.config(
 
 export const upload = async (file, folderName) => {
 
-    const option = {
+    try {
+        const options = {
         folder: folderName,
         public_id: `${folderName}/${Date.now()}`
     }
 
-  const image =  await cloudinary.uploader.upload(file, option)
+  const image =  await cloudinary.uploader.upload(file, options)
     return image
+        
+    } catch (error) {
+        console.log("cloudinary error", error);
+        
+    }
+
+    
 
 }
