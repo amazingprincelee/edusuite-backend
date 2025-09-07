@@ -9,7 +9,7 @@ const usersSchema  = new mongoose.Schema({
     password: {type: String, required: true},
     gender: { type: String, enum: ["Male", "Female"]},
     address: String,
-    profilePicture: String,
+    profilePhoto: String,
     role: {type: String, enum: ['admin', "superadmin", "teacher", "parent"]},
     createdAt: {type: Date, default: Date.now},
 });

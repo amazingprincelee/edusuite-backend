@@ -1,5 +1,5 @@
 import Student from "../models/student.js";
-import { upload } from "../config/cloudinary.js";
+import { upload, isCloudinaryConnected } from "../config/cloudinary.js";
 
 export const addStudent = async (req, res) => {
   const {
@@ -37,12 +37,9 @@ export const addStudent = async (req, res) => {
     currentTerm !== "second" &&
     currentTerm !== "third"
   ) {
-    res
-      .status(401)
-      .json({
-        message:
-          "Incorrent term name format, please use first, second or third",
-      });
+    res.status(401).json({
+      message: "Incorrent term name format, please use first, second or third",
+    });
   }
 
   const student = await Student.findOne({
@@ -113,8 +110,6 @@ export const getStudentById = async (req, res) => {
   try {
     const studentId = req.params.studentId;
 
-    console.log(studentId);
-
     const student = await Student.findById(studentId)
       .populate("paymentId", "balance status")
       .populate("parentId", "fullname address phone");
@@ -133,45 +128,63 @@ export const getStudentById = async (req, res) => {
 
 export const uploadImage = async (req, res) => {
   try {
-    const studentId  = req.params.studentId;
+     const studentId = req.params.studentId;
+     const { image } = req.files;
+     const fileTypes = ["image/jpeg", "image/png", "image/jpg"];
+     const imageSize = 1024;
+     
+    if(image){
+
+      if (!fileTypes.includes(image.mimetype)) {
+        return res
+          .status(400)
+          .json({ success: false, error: "image should be jpeg, jpg or png" });
+      }
+
+    }else{
+      return res.status(400).json({message: "image file error"})
+    }
+
+    //Validate image size
+      if (image.size / 1024 > imageSize) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: `Image size is greater than ${imageSize}`,
+          });
+      }
     
-    const student = await Student.findById(studentId);
+
+     const student = await Student.findById(studentId);
 
     if (!student) {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    if(req.files && req.files.image){
-        const  { image } = req.files
-        const fileTypes = ['image.jpeg', 'image/png', 'image/jpg']
-        const imageSize = 1024
 
-        //validate image type
-        if(!fileTypes.includes(image.mimetype)){
-            return res.status(400).json({success: false, error: "image should be jpeg, jpg or png"})
-        }
-
-        //Validate image size
-        if(image.size / 1024 > imageSize){
-            return res.status(400).json({success: false, error: `Image size is greater than ${imageSize}`})
-        }
-
-        const imageUrl = await upload(image.tempFilePath, student._id);
-
-        console.log(imageUrl);
-        
-
-        student.profilePicture = imageUrl;
+     const isConnected = await isCloudinaryConnected();
+    if (!isConnected) {
+      return res.status(400).json({message:"Cloudinary is not reachable. Check your internet or credentials."});
     }
 
-    
+     const imageUrl = await upload(image.tempFilePath, student._id);
+
+     if (!imageUrl) {
+      return res.status(500).json({ message: "Image upload failed" });
+    }
+     
+     student.studentPhoto = imageUrl.secure_url; 
+     await student.save();
 
     res
       .status(200)
-      .json({ message: "Saved image", profilePicture: student.profilePicture });
+      .json({
+        message: "Successfully uploaded student photo image",
+        studentPhoto: student.studentPhoto
+      });
 
-      
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Internal server error", error });
   }
 };

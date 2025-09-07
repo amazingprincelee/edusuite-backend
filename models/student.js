@@ -38,9 +38,9 @@ const studentSchema = new mongoose.Schema({
   currentSession: { type: String, required: true }, // e.g., "2024/2025"
   currentTerm: { type: String, enum: ["first", "second", "third"] },
 
-  profilePicture: { type: String }, 
+  studentPhoto: { type: String }, 
 
-  status: { type: String, enum: ["active", "graduated", "transferred"], default: "active" },
+  status: { type: String, enum: ["active", "graduated", "transferred", "Active", "Graduated", "Transferred"], default: "Active" },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
