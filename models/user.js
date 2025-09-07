@@ -7,10 +7,10 @@ const usersSchema  = new mongoose.Schema({
     email: {type: String, unique: true},
     phone: {type: String, unique: true, required: true},
     password: {type: String, required: true},
-    gender: { type: String, enum: ["Male", "Female"]},
+    gender: { type: String, enum: ["Male", "Female", "male", "female"]},
     address: String,
     profilePhoto: String,
-    role: {type: String, enum: ['admin', "superadmin", "teacher", "parent"]},
+    role: {type: String, enum: ['admin', "superadmin", "teacher", "parent", 'Admin', "Superadmin", "Teacher", "Parent"]},
     createdAt: {type: Date, default: Date.now},
 });
 

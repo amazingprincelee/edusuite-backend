@@ -27,7 +27,7 @@ export const uploadImage = async (req, res) => {
      const { image } = req.files;
      const fileTypes = ["image/jpeg", "image/png", "image/jpg"];
      const imageSize = 1024;
-     
+ 
     if(image){
 
       if (!fileTypes.includes(image.mimetype)) {
@@ -51,7 +51,7 @@ export const uploadImage = async (req, res) => {
       }
     
 
-     const user = await User.findById(userId);
+     const user = await User.findById(userId);     
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -76,7 +76,7 @@ export const uploadImage = async (req, res) => {
       .status(200)
       .json({
         message: "Successfully uploaded user photo image",
-        studentPhoto: student.studentPhoto
+        profilePhoto: user.profilePhoto
       });
 
   } catch (error) {
