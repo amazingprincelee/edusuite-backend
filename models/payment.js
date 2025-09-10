@@ -26,7 +26,7 @@ const paymentSchema = new mongoose.Schema({
       amount: { type: Number, required: true },
       date: { type: Date, default: Date.now },
       method: { type: String, enum: ["bank transfer", "pos", "online", "cash"], default: "bank transfer" },
-      reference: { type: String } // e.g. transaction receipt upload from cloudinary
+      reference: { type: String } // e.g. transaction receipt upload
     }
   ],
 
@@ -39,7 +39,6 @@ const paymentSchema = new mongoose.Schema({
     enum: ["pending", "part payment", "paid"], 
     default: "pending" 
   },
-
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

@@ -10,7 +10,10 @@ const usersSchema  = new mongoose.Schema({
     gender: { type: String, enum: ["Male", "Female", "male", "female"]},
     address: String,
     profilePhoto: String,
-    role: {type: String, enum: ['admin', "superadmin", "teacher", "parent", 'Admin', "Superadmin", "Teacher", "Parent"]},
+    role: {type: String, enum: ['admin', "superadmin", "teacher", "parent"]},
+    subjects: [{ type: String, default: null }],
+    salary: { type: Number, default: 0 },
+    designation: { type: String, default: null }, // e.g., "Senior Teacher", "Head of Department"
     createdAt: {type: Date, default: Date.now},
 });
 

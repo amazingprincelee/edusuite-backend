@@ -10,6 +10,11 @@ import classRoute from "./routes/classRoute.js";
 import teacherRoute from "./routes/teacherRoute.js";
 import paymentRoute from "./routes/paymentRoute.js";
 import userRoute from "./routes/userRoute.js";
+import schoolInfoRoute from "./routes/schoolInformationRoute.js";
+import adminRoute from "./routes/adminRoute.js"
+import configRoute from "./routes/configRoute.js";
+import examRoute from "./routes/examRoute.js";
+import resultRoute from "./routes/resultRoute.js";
 
 const app = express();
 
@@ -36,6 +41,11 @@ app.use(fileUpload({
  app.use("/teacher", teacherRoute);
  app.use('/payment', paymentRoute);
  app.use("/user", userRoute);
+ app.use("/school-info", schoolInfoRoute);
+ app.use("/config", configRoute);
+ app.use("/admin", adminRoute);
+ app.use("/exams", examRoute);
+ app.use("/result", examRoute);
 
 
 

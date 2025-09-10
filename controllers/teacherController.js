@@ -1,9 +1,10 @@
 import Teacher from "../models/teachers.js";
+import User from "../models/user.js";
 
 
 
 
-export const addTeacher = async (req, res) => {
+export const updateTeacher = async (req, res) => {
 
    
 
@@ -41,24 +42,46 @@ export const addTeacher = async (req, res) => {
 
 };
 
-export const getTeachers = async (req, res) => {
+export const getAllTeachers = async (req, res) => {
 
-    const teachers = await Teacher.find().populate("userId", "email fullname phone gender");
+    try {
+
+         const teachers = await User.find({role: "teacher"});
 
     if(!teachers){
         res.status(404).json({message: "Teachers not found"});
     }
 
     res.status(200).json({message: "teacher found", teachers})
+        
+    } catch (error) {
+        res.status(200).json({message:"Internal server error"})
+    }
+
+   
 }
+
+
 
 export const getTeacherById = async (req, res) => {
 
-    const foundTeacher = await Teacher.findById(req.body.userId)
+    try {
 
-    if(!foundTeacher){
+        const teacherId = req.params.teacherId
+
+    const teacher = await User.findById(teacherId);
+
+    const role = teacher.role
+
+    if(role !== "teacher"){
         res.status(404).json({message: "Teacher not found"})
     }
 
-    res.status(200).json({message: "Found Teachers", foundTeacher})
+    res.status(200).json({message: "Found teacher", teacher})
+        
+    } catch (error) {
+        res.status(500).json({message: "Internal server error"})
+    }
+
+    
 }

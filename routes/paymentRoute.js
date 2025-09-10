@@ -1,9 +1,14 @@
-import express from "express"
-import {payment} from "../controllers/payControllers.js"
+import express from "express";
+import { isAdmin } from "../middlewares/isAdmin.js"
+import { cashPayment, paystackWebhook, flutterwaveWebhook, initiatePayment } from "../controllers/paymentControllers.js"
 
 const router = express.Router()
 
 
-router.post('/all', payment)
+router.post('/manual', isAdmin, cashPayment);
+router.post("/online-payment", initiatePayment );
+router.post("/webhook/paystack", paystackWebhook);
+router.post("/webhook/flutterwave", flutterwaveWebhook);
 
-export default router
+
+export default router;
