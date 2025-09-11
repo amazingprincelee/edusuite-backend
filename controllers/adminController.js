@@ -3,6 +3,9 @@ import Student from "../models/student.js";
 
 
 export const getAdminDashboard = async (req, res) => {
+   console.log("I got hit");
+   
+
   try {
     const totalStudents = await Student.countDocuments();
     const activeStudents = await Student.countDocuments({ status: /active/i });
@@ -33,6 +36,6 @@ export const getAdminDashboard = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching admin dashboard:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
+    res.status(500).json({ success: false, message: "Internal Server Errorsss" });
   }
 };

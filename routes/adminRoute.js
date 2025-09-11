@@ -1,5 +1,6 @@
 import express from "express";
 import { isAdmin } from "../middlewares/isAdmin.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js"
 import { getAdminDashboard } from "../controllers/adminController.js"
 import { 
   getAllPayments,
@@ -12,7 +13,7 @@ import {
 
 const router = express.Router();
 
-router.get("/dashboard", isAdmin, getAdminDashboard)
+router.get("/dashboard", isAuthenticated, isAdmin, getAdminDashboard)
 router.get("/payments", isAdmin, getAllPayments);         
 router.get("/fees/summary", isAdmin, getFeesSummary);      
 router.get("/fees/class-summary", isAdmin, getClassSummary);

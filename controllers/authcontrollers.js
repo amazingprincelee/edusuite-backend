@@ -13,28 +13,32 @@ export const login = async (req, res)=> {
 
     try {
 
-        const { phone, email, password } = req.body;
+        let { username, password } = req.body;
+        
+        //remove extra space and bring down to lowercase
+        username = username.trim().toLowerCase();
 
-        console.log(email);
+        console.log(username);
         console.log(password);
         
 
-        const user = await User.findOne({$or: [{phone: phone}, {email: email}]});
+        const user = await User.findOne({$or: [{phone: username}, {email: username}]});
+        
 
         if(!user){
-            res.status(404).json({message: "user not found"})
+           return res.status(400).json({message: "Incorrect username or password"})
         }
 
        const isMatched = await bcrypt.compare(password, user.password)
 
        if(isMatched){
          
-         const token = jwt.sign({id: user._id}, JWT_SECRET, {expiresIn: 60 * 60});
-         res.status(200).json({message: "login successfully", token})
+         const token = jwt.sign({id: user._id}, JWT_SECRET, {expiresIn: 60 * 60 * 24 * 7});
+         return res.status(200).json({message: "login successfully", token})
 
        }else{
         
-        res.status(401).json({message: "password is incorrect"});
+        return res.status(401).json({message: "password is incorrect"});
         
        }
         

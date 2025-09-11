@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import fileUpload from "express-fileupload";
 import http from "http";
+import cors from "cors"
 import { Server } from "socket.io";
 import connectDb from "./config/db.js";
 import authRoute from "./routes/authRoute.js";
@@ -27,6 +28,9 @@ const io = new Server(httpServer, {
     }
 } );
 
+app.use(cors({
+    origin:"*"
+}))
 app.use(express.json())
 app.use(express.urlencoded({extended: false}))
 app.use(fileUpload({
@@ -45,7 +49,7 @@ app.use(fileUpload({
  app.use("/config", configRoute);
  app.use("/admin", adminRoute);
  app.use("/exams", examRoute);
- app.use("/result", examRoute);
+ app.use("/result", resultRoute);
 
 
 
