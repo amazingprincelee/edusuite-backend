@@ -7,7 +7,7 @@ export const isAdmin = async (req, res, next) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
     if(user.role !== "admin"){
-      return res.status(403).json({message: "Unauthorised"});
+      return res.status(403).json({message: "Unauthoriseds"});
     }
     next();
   } catch (error) {

@@ -10,7 +10,7 @@ export const isAuthenticated = async (req, res, next) => {
      const authHeader = req.headers["authorization"];
 
     if(!authHeader){
-        return res.status(401).json({message: "No token found"});
+        return res.status(401).json({message: "No token founds"});
     };
 
     // get token

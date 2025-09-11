@@ -1,25 +1,29 @@
 import ClassList from "../models/class.js"
 
 
-export const createClass = async (req, res)=>{
+export const createClass = async (req, res) => {
+  try {
+    const { classLevel } = req.body;
 
-   const { classLevel } = req.body
+    const existingClass = await ClassList.findOne({ level: classLevel });
+    console.log("Existing class:", existingClass);
 
-   const existingClass = await ClassList.find({level: classLevel});
+    if (existingClass) {
+      return res.status(400).json({ message: "This class already exists" });
+    }
 
-   if(existingClass){
-    res.status(400).json({message: "This class already exist"})
-   }
+    const newClass = new ClassList({ level: classLevel });
+    await newClass.save();
 
-   const newClass = new ClassList({
-    level: classLevel
-   })
+    res.status(200).json({
+      message: "Successfully created class",
+      newClass
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Internal Server Error", error: err });
+  }
+};
 
-   newClass.save();
-
-   res.status(200).json({message: "Successfully created class"}, newClass)
-
-}
 
 export const getClass = async ( req, res) => {
 
