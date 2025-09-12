@@ -436,6 +436,9 @@ export const getDebtors = async (req, res) => {
 
 
 export const approvePayment = async (req, res) => {
+    console.log("approve payment controller got hit");
+    
+
   try {
     const { paymentId, installmentId } = req.body;
      const adminId = req.user.id

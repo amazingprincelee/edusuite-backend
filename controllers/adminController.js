@@ -3,9 +3,7 @@ import Student from "../models/student.js";
 
 
 export const getAdminDashboard = async (req, res) => {
-   console.log("I got hit");
    
-
   try {
     const totalStudents = await Student.countDocuments();
     const activeStudents = await Student.countDocuments({ status: /active/i });
