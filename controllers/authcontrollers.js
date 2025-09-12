@@ -33,8 +33,8 @@ export const login = async (req, res)=> {
 
        if(isMatched){
          
-         const token = jwt.sign({id: user._id}, JWT_SECRET, {expiresIn: 60 * 60 * 24 * 7});
-         return res.status(200).json({message: "login successfully", token})
+         const token = jwt.sign({id: user._id, role: user.role}, JWT_SECRET, {expiresIn: 60 * 60 * 24 * 7});
+         return res.status(200).json({message: "login successfully", token, role: user.role})
 
        }else{
         

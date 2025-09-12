@@ -21,14 +21,22 @@ const paymentSchema = new mongoose.Schema({
 
   totalAmount: { type: Number }, 
 
-  installments: [
-    {
-      amount: { type: Number, required: true },
-      date: { type: Date, default: Date.now },
-      method: { type: String, enum: ["bank transfer", "pos", "online", "cash"], default: "bank transfer" },
-      reference: { type: String } // e.g. transaction receipt upload
-    }
-  ],
+ installments: [
+  {
+    amount: { type: Number, required: true },
+    date: { type: Date, default: Date.now },
+    method: { 
+      type: String, 
+      enum: ["bank transfer", "pos", "online", "cash"], 
+      default: "bank transfer" 
+    },
+    reference: { type: String }, // transaction ref (for online)
+    receiptUrl: { type: String }, // proof of payment (for manual)
+    approved: { type: Boolean, default: false },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    approvedAt: { type: Date }
+  }
+],
 
   balance: { type: Number, default: function () {
     return this.totalAmount;

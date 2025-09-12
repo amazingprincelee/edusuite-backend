@@ -1,13 +1,14 @@
 import Payment from "../models/payment.js";
-import Student from "../models/student.js";
 import Config from "../models/config.js";
 import {
   createFlutterwavePayment,
   createPaystackPayment,
 } from "../utils/paymentGateway.js";
 import { upload } from "../config/cloudinary.js";
+import mongoose from "mongoose";
 
-export const cashPayment = async (req, res) => {
+
+export const manualPayment = async (req, res) => {
   try {
     const {
       studentId,
@@ -21,63 +22,104 @@ export const cashPayment = async (req, res) => {
       status,
     } = req.body;
 
-     if (!req.files || !req.files.image) {
-      return res.status(400).json({ success: false, message: "No teller image uploaded" });
+    console.log({studentId, feeType, description, session, term, totalAmount, amount, method, status});
+    
+    // Validate required fields
+    if (!studentId || !feeType || !session || !term || !totalAmount || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields" 
+      });
+    }
+
+    // Validate studentId format
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid student ID format" 
+      });
+    }
+
+    // Check if file exists
+    if (!req.files || !req.files.image) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "No teller image uploaded" 
+      });
     }
 
     const { image } = req.files;
     const fileTypes = ["image/jpeg", "image/png", "image/jpg"];
-    const imageSize = 1024;
+    const imageSize = 1024; // KB
 
-    if (image) {
-      if (!fileTypes.includes(image.mimetype)) {
-        return res
-          .status(400)
-          .json({ success: false, error: "image should be jpeg, jpg or png" });
-      }
-    } else {
-      return res.status(400).json({ message: "image file error" });
-    }
-
-    //Validate image size
-    if (image.size / 1024 > imageSize) {
-      return res.status(400).json({
-        success: false,
-        error: `Image size should not be greater than ${imageSize}`,
+    // Validate file type
+    if (!fileTypes.includes(image.mimetype)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Image should be jpeg, jpg or png" 
       });
     }
 
-    const isConnected = await isCloudinaryConnected();
-        if (!isConnected) {
-          return res.status(400).json({message:"Cloudinary is not reachable. Check your internet or credentials."});
-        }
-    
-         const imageUrl = await upload(image.tempFilePath, studentId);
-    
-         if (!imageUrl) {
-          return res.status(500).json({ message: "Image upload failed" });
-        }
+    // Validate image size
+    if (image.size / 1024 > imageSize) {
+      return res.status(400).json({
+        success: false,
+        error: `Image size should not be greater than ${imageSize}KB`,
+      });
+    }
 
+    console.log("Starting image upload to Cloudinary...");
+    
+    // Upload image to Cloudinary
+    const imageUrl = await upload(image.tempFilePath, studentId);
+    
+    if (!imageUrl || !imageUrl.secure_url) {
+      return res.status(500).json({ 
+        success: false,
+        message: "Image upload failed" 
+      });
+    }
+
+    console.log("Image uploaded successfully:", imageUrl.secure_url);
+
+    // Create payment document - FIX: installments should be an array
     const currentPayment = new Payment({
-      studentId: studentId,
+      studentId: new mongoose.Types.ObjectId(studentId),
       feeType: feeType,
       description: description,
       session: session,
       term: term,
-      totalAmount: totalAmount,
-      installments: {
-        amount: amount,
-        method: method,
-        reference: imageUrl,
-      },
-      status: status,
+      totalAmount: Number(totalAmount),
+      installments: [
+        {
+          amount: Number(amount),
+          method: method,
+          receiptUrl: imageUrl.secure_url,
+          approved: false,
+        }
+      ],
+      status: status || "pending",
     });
 
-    await currentPayment.save();
+    console.log("Saving payment to database...");
+    
+    const savedPayment = await currentPayment.save();
+    
+    console.log("Payment saved successfully:", savedPayment._id);
 
-    res.status(200).json({ message: "Payment successfully", currentPayment });
+    res.status(200).json({ 
+      success: true,
+      message: "Payment created successfully", 
+      payment: savedPayment 
+    });
+    
   } catch (error) {
-    res.status(500).json({ message: "Internal Server error" });
+    console.error("Manual payment error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
   }
 };
 
@@ -146,11 +188,11 @@ export const initiatePayment = async (req, res) => {
 
 
 
-// ✅ Flutterwave webhook
+
 export const flutterwaveWebhook = async (req, res) => {
   try {
     const config = await Config.findOne();
-    const secretHash = config.flutterwaveSecret; // Or a separate webhook secret if you set it
+    const secretHash = config.flutterwaveSecret; 
 
     // Validate signature
     const signature = req.headers["verif-hash"];
@@ -170,11 +212,23 @@ export const flutterwaveWebhook = async (req, res) => {
       const verification = await verifyFlutterwavePayment(txId);
 
       if (verification.status === "success") {
-        await Payment.findOneAndUpdate(
-          { "installments.reference": verification.data.tx_ref },
-          { status: "paid" },
-          { new: true }
-        );
+        const payment = await Payment.findOne({
+          "installments.reference": verification.data.tx_ref
+        });
+
+        if (payment) {
+          const installment = payment.installments.find(
+            (inst) => inst.reference === verification.data.tx_ref
+          );
+
+          if (installment) {
+            installment.approved = true;
+            installment.approvedBy = "system"; 
+            installment.approvedAt = new Date();
+          }
+
+          await payment.save();
+        }
       }
     }
 
@@ -185,13 +239,14 @@ export const flutterwaveWebhook = async (req, res) => {
   }
 };
 
-// ✅ Paystack webhook
+
+
 export const paystackWebhook = async (req, res) => {
   try {
     const config = await Config.findOne();
     const secret = config.paystackSecret;
 
-    // Validate signature
+    // ✅ Validate signature
     const hash = crypto
       .createHmac("sha512", secret)
       .update(JSON.stringify(req.body))
@@ -206,15 +261,27 @@ export const paystackWebhook = async (req, res) => {
     if (event.event === "charge.success") {
       const reference = event.data.reference;
 
-      // Verify with Paystack API
+      // ✅ Verify with Paystack API
       const verification = await verifyPaystackPayment(reference);
 
       if (verification.status && verification.data.status === "success") {
-        await Payment.findOneAndUpdate(
-          { "installments.reference": reference },
-          { status: "paid" },
-          { new: true }
-        );
+        const payment = await Payment.findOne({
+          "installments.reference": reference,
+        });
+
+        if (payment) {
+          const installment = payment.installments.find(
+            (inst) => inst.reference === reference
+          );
+
+          if (installment) {
+            installment.approved = true;
+            installment.approvedBy = "system"; 
+            installment.approvedAt = new Date();
+          }
+
+          await payment.save();
+        }
       }
     }
 
@@ -224,6 +291,24 @@ export const paystackWebhook = async (req, res) => {
     res.sendStatus(500);
   }
 };
+
+
+export const getAllPayments = async (req, res) => {
+  try {
+
+    const payments = await Payment.find().populate('studentId', 'firstName surName classLevel section currentSession');
+
+    if (!payments || payments.length === 0) {
+       return res.status(404).json({success: false, message:"No payment found"})
+    }
+
+    res.status(200).json({ success: true, count: payments.length, payments });
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
 
 
 
@@ -255,31 +340,8 @@ export const getStudentBalance = async (req, res) => {
   }
 };
 
-// ✅ Get all payments with optional filters
-export const getAllPayments = async (req, res) => {
-  try {
-    const { session, term, classLevel, status } = req.query;
 
-    let filter = {};
-    if (session) filter.session = session;
-    if (term) filter.term = term;
-    if (status) filter.status = status;
 
-    // Join student info if classLevel is needed
-    let query = Payment.find(filter).populate("studentId", "firstName surName classLevel admissionNumber");
-
-    let payments = await query;
-
-    if (classLevel) {
-      payments = payments.filter(p => p.studentId?.classLevel === classLevel);
-    }
-
-    res.status(200).json({ success: true, count: payments.length, payments });
-  } catch (error) {
-    console.error("Error fetching payments:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-};
 
 // ✅ Get summary of fees for a session & term
 export const getFeesSummary = async (req, res) => {
@@ -368,6 +430,45 @@ export const getDebtors = async (req, res) => {
     res.status(200).json({ success: true, count: debtors.length, debtors });
   } catch (error) {
     console.error("Error fetching debtors:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+
+export const approvePayment = async (req, res) => {
+  try {
+    const { paymentId, installmentId } = req.body;
+     const adminId = req.user.id
+
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment not found" });
+    }
+
+    const installment = payment.installments.id(installmentId);
+
+    if (!installment) {
+      return res.status(404).json({ success: false, message: "Installment not found" });
+    }
+
+    if (installment.approved) {
+      return res.status(400).json({ success: false, message: "This installment is already approved" });
+    }
+
+    installment.approved = true;
+    installment.approvedBy = adminId;
+    installment.approvedAt = new Date();
+
+    await payment.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Installment approved successfully",
+      payment,
+    });
+  } catch (error) {
+    console.error("Error approving installment:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
