@@ -31,7 +31,8 @@ const paymentSchema = new mongoose.Schema({
       default: "bank transfer" 
     },
     reference: { type: String }, // transaction ref (for online)
-    receiptUrl: { type: String }, // proof of payment (for manual)
+    proofOfPaymentUrl: { type: String }, 
+    receiptUrl: { type: String },
     approved: { type: Boolean, default: false },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date }
@@ -42,26 +43,38 @@ const paymentSchema = new mongoose.Schema({
     return this.totalAmount;
   }},
 
-  status: { 
-    type: String, 
-    enum: ["pending", "part payment", "paid"], 
-    default: "pending" 
-  },
+ status: { 
+  type: String, 
+  enum: ["pending", "partial", "completed"], 
+  default: "pending" 
+},
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
 // Update balance and status automatically
 paymentSchema.pre("save", function (next) {
-  const paid = this.installments.reduce((sum, inst) => sum + inst.amount, 0);
-  this.balance = this.totalAmount - paid;
+  const payment = this;
 
-  if (paid === 0) this.status = "pending";
-  else if (paid < this.totalAmount) this.status = "part payment";
-  else this.status = "paid";
+  // Only count approved installments
+  const paid = payment.installments
+    .filter(inst => inst.approved) // ✅ Only approved payments
+    .reduce((sum, inst) => sum + inst.amount, 0);
+
+  payment.balance = payment.totalAmount - paid;
+
+  if (payment.balance <= 0) {
+    payment.status = "completed";
+  } else if (paid > 0) {
+    payment.status = "partial";
+  } else {
+    payment.status = "pending";
+  }
 
   next();
 });
+
 
 const Payment = mongoose.model("Payment", paymentSchema);
 export default Payment;

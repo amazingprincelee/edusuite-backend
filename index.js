@@ -17,6 +17,10 @@ import configRoute from "./routes/configRoute.js";
 import examRoute from "./routes/examRoute.js";
 import resultRoute from "./routes/resultRoute.js";
 
+
+
+
+
 const app = express();
 
 const httpServer = http.createServer(app)

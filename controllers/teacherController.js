@@ -146,10 +146,34 @@ export const getAllTeachers = async (req, res) => {
         
     } catch (error) {
         res.status(200).json({message:"Internal server error"})
+    } 
+};
+
+export const deleteTeacher = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+
+    // Find the user
+    const user = await User.findById(teacherId);
+    if (!user || user.role !== "teacher") {
+      return res.status(404).json({ message: "Teacher not found" });
     }
 
-   
-}
+    // Find and delete the linked teacher record
+    const teacher = await Teacher.findOneAndDelete({ userId: teacherId });
+    if (!teacher) {
+      return res.status(404).json({ message: "Teacher record not found" });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(teacherId);
+
+    res.status(200).json({ message: "Teacher deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error", error: error.message });
+  }
+};
 
 
 

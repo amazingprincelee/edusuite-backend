@@ -1,13 +1,12 @@
 import Payment from "../models/payment.js";
 import Config from "../models/config.js";
-import {
-  createFlutterwavePayment,
-  createPaystackPayment,
-} from "../utils/paymentGateway.js";
+import { createFlutterwavePayment, createPaystackPayment } from "../utils/paymentGateway.js";
 import { upload } from "../config/cloudinary.js";
 import mongoose from "mongoose";
+import { generateReceipt } from "../utils/receipt.js";
+import crypto from "crypto";
 
-
+// Existing controllers (unchanged, included for completeness)
 export const manualPayment = async (req, res) => {
   try {
     const {
@@ -22,179 +21,131 @@ export const manualPayment = async (req, res) => {
       status,
     } = req.body;
 
-    console.log({studentId, feeType, description, session, term, totalAmount, amount, method, status});
-    
-    // Validate required fields
     if (!studentId || !feeType || !session || !term || !totalAmount || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Missing required fields" 
-      });
+      return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // Validate studentId format
     if (!mongoose.Types.ObjectId.isValid(studentId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid student ID format" 
-      });
+      return res.status(400).json({ success: false, message: "Invalid student ID format" });
     }
 
-    // Check if file exists
     if (!req.files || !req.files.image) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "No teller image uploaded" 
-      });
+      return res.status(400).json({ success: false, message: "No teller image uploaded" });
     }
 
     const { image } = req.files;
     const fileTypes = ["image/jpeg", "image/png", "image/jpg"];
     const imageSize = 1024; // KB
 
-    // Validate file type
     if (!fileTypes.includes(image.mimetype)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Image should be jpeg, jpg or png" 
-      });
+      return res.status(400).json({ success: false, error: "Image should be jpeg, jpg or png" });
     }
 
-    // Validate image size
     if (image.size / 1024 > imageSize) {
-      return res.status(400).json({
-        success: false,
-        error: `Image size should not be greater than ${imageSize}KB`,
-      });
+      return res.status(400).json({ success: false, error: `Image size should not be greater than ${imageSize}KB` });
     }
 
-    console.log("Starting image upload to Cloudinary...");
-    
-    // Upload image to Cloudinary
     const imageUrl = await upload(image.tempFilePath, studentId);
-    
+
     if (!imageUrl || !imageUrl.secure_url) {
-      return res.status(500).json({ 
-        success: false,
-        message: "Image upload failed" 
-      });
+      return res.status(500).json({ success: false, message: "Image upload failed" });
     }
 
-    console.log("Image uploaded successfully:", imageUrl.secure_url);
+    // ✅ Check if payment already exists
+    let payment = await Payment.findOne({ studentId, feeType, session, term });
 
-    // Create payment document - FIX: installments should be an array
-    const currentPayment = new Payment({
-      studentId: new mongoose.Types.ObjectId(studentId),
-      feeType: feeType,
-      description: description,
-      session: session,
-      term: term,
-      totalAmount: Number(totalAmount),
-      installments: [
-        {
-          amount: Number(amount),
-          method: method,
-          receiptUrl: imageUrl.secure_url,
-          approved: false,
-        }
-      ],
-      status: status || "pending",
-    });
+    if (payment) {
+      // Add new installment
+      payment.installments.push({
+        amount: Number(amount),
+        method,
+        proofOfPaymentUrl: imageUrl.secure_url,
+        approved: false,
+      });
+      await payment.save();
+    } else {
+      // Create new payment
+      payment = new Payment({
+        studentId,
+        feeType,
+        description,
+        session,
+        term,
+        totalAmount: Number(totalAmount),
+        installments: [
+          {
+            amount: Number(amount),
+            method,
+            proofOfPaymentUrl: imageUrl.secure_url,
+            approved: false,
+          },
+        ],
+        status: status || "pending",
+      });
+      await payment.save();
+    }
 
-    console.log("Saving payment to database...");
-    
-    const savedPayment = await currentPayment.save();
-    
-    console.log("Payment saved successfully:", savedPayment._id);
-
-    res.status(200).json({ 
-      success: true,
-      message: "Payment created successfully", 
-      payment: savedPayment 
-    });
-    
+    res.status(200).json({ success: true, message: "Payment recorded successfully", payment });
   } catch (error) {
     console.error("Manual payment error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      error: process.env.NODE_ENV === "development" ? error.message : "Something went wrong",
     });
   }
 };
 
-// Initiate online payment
+
 export const initiatePayment = async (req, res) => {
   try {
-    const {
-      studentId,
-      feeType,
-      description,
-      session,
-      term,
-      totalAmount,
-      amount,
-      method,
-      reference,
-      email,
-      name,
-    } = req.body;
+    const { studentId, feeType, description, session, term, totalAmount, amount, method, reference, email, name } = req.body;
 
     let paymentLink;
 
     if (method === "flutterwave") {
-      const response = await createFlutterwavePayment({
-        amount,
-        reference,
-        email,
-        name,
-        description,
-      });
+      const response = await createFlutterwavePayment({ amount, reference, email, name, description });
       paymentLink = response.data.link;
     } else if (method === "paystack") {
-      const response = await createPaystackPayment({
-        amount,
-        reference,
-        email,
-        name,
-        description,
-      });
+      const response = await createPaystackPayment({ amount, reference, email, name, description });
       paymentLink = response.data.authorization_url;
     } else {
       return res.status(400).json({ message: "Invalid payment method" });
     }
 
-    // Save payment in DB
-    const currentPayment = new Payment({
-      studentId,
-      feeType,
-      description,
-      session,
-      term,
-      totalAmount,
-      installments: { amount, method, reference },
-      status: "pending",
-    });
-    await currentPayment.save();
+    // ✅ Check if payment exists
+    let payment = await Payment.findOne({ studentId, feeType, session, term });
 
-    res.status(200).json({ success: true, paymentLink, currentPayment });
+    if (payment) {
+      payment.installments.push({ amount, method, reference });
+      await payment.save();
+    } else {
+      payment = new Payment({
+        studentId,
+        feeType,
+        description,
+        session,
+        term,
+        totalAmount,
+        installments: [{ amount, method, reference }],
+        status: "pending",
+      });
+      await payment.save();
+    }
+
+    res.status(200).json({ success: true, paymentLink, payment });
   } catch (error) {
     console.error("Payment initiation error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Internal Server Error", error });
+    res.status(500).json({ success: false, message: "Internal Server Error", error });
   }
 };
-
-
 
 
 export const flutterwaveWebhook = async (req, res) => {
   try {
     const config = await Config.findOne();
-    const secretHash = config.flutterwaveSecret; 
+    const secretHash = config.flutterwaveSecret;
 
-    // Validate signature
     const signature = req.headers["verif-hash"];
     if (!signature || signature !== secretHash) {
       return res.status(401).send("Invalid signature");
@@ -202,32 +153,23 @@ export const flutterwaveWebhook = async (req, res) => {
 
     const payload = req.body;
 
-    if (
-      payload.event === "charge.completed" &&
-      payload.data.status === "successful"
-    ) {
+    if (payload.event === "charge.completed" && payload.data.status === "successful") {
       const txId = payload.data.id;
-
-      // Verify with Flutterwave API
       const verification = await verifyFlutterwavePayment(txId);
 
       if (verification.status === "success") {
-        const payment = await Payment.findOne({
-          "installments.reference": verification.data.tx_ref
-        });
+        const payment = await Payment.findOne({ "installments.reference": verification.data.tx_ref });
 
         if (payment) {
-          const installment = payment.installments.find(
-            (inst) => inst.reference === verification.data.tx_ref
-          );
+          const installment = payment.installments.find((inst) => inst.reference === verification.data.tx_ref);
 
           if (installment) {
             installment.approved = true;
-            installment.approvedBy = "system"; 
+            installment.approvedBy = "system";
             installment.approvedAt = new Date();
+            await payment.save();
+            await generateReceipt(payment._id, installment._id); // Generate receipt after webhook approval
           }
-
-          await payment.save();
         }
       }
     }
@@ -239,18 +181,12 @@ export const flutterwaveWebhook = async (req, res) => {
   }
 };
 
-
-
 export const paystackWebhook = async (req, res) => {
   try {
     const config = await Config.findOne();
     const secret = config.paystackSecret;
 
-    // ✅ Validate signature
-    const hash = crypto
-      .createHmac("sha512", secret)
-      .update(JSON.stringify(req.body))
-      .digest("hex");
+    const hash = crypto.createHmac("sha512", secret).update(JSON.stringify(req.body)).digest("hex");
 
     if (hash !== req.headers["x-paystack-signature"]) {
       return res.status(401).send("Invalid signature");
@@ -260,27 +196,21 @@ export const paystackWebhook = async (req, res) => {
 
     if (event.event === "charge.success") {
       const reference = event.data.reference;
-
-      // ✅ Verify with Paystack API
       const verification = await verifyPaystackPayment(reference);
 
       if (verification.status && verification.data.status === "success") {
-        const payment = await Payment.findOne({
-          "installments.reference": reference,
-        });
+        const payment = await Payment.findOne({ "installments.reference": reference });
 
         if (payment) {
-          const installment = payment.installments.find(
-            (inst) => inst.reference === reference
-          );
+          const installment = payment.installments.find((inst) => inst.reference === reference);
 
           if (installment) {
             installment.approved = true;
-            installment.approvedBy = "system"; 
+            installment.approvedBy = "system";
             installment.approvedAt = new Date();
+            await payment.save();
+            await generateReceipt(payment._id, installment._id); // Generate receipt after webhook approval
           }
-
-          await payment.save();
         }
       }
     }
@@ -292,25 +222,52 @@ export const paystackWebhook = async (req, res) => {
   }
 };
 
-
 export const getAllPayments = async (req, res) => {
   try {
+    // Add filtering and search capabilities
+    const { session, term, status, studentName, classLevel, feeType } = req.query;
+    let filter = {};
 
-    const payments = await Payment.find().populate('studentId', 'firstName surName classLevel section currentSession');
+    if (session) filter.session = session;
+    if (term) filter.term = term;
+    if (status) filter.status = status;
+    if (feeType) filter.feeType = feeType;
 
-    if (!payments || payments.length === 0) {
-       return res.status(404).json({success: false, message:"No payment found"})
+    // Search by student name (case-insensitive partial match)
+    let studentFilter = {};
+    if (studentName) {
+      studentFilter = {
+        $or: [
+          { firstName: { $regex: studentName, $options: 'i' } },
+          { surName: { $regex: studentName, $options: 'i' } },
+        ],
+      };
+    }
+    if (classLevel) {
+      studentFilter.classLevel = { $regex: classLevel, $options: 'i' };
     }
 
-    res.status(200).json({ success: true, count: payments.length, payments });
+    const payments = await Payment.find(filter)
+      .populate({
+        path: 'studentId',
+        match: studentFilter,
+        select: 'firstName surName classLevel section currentSession',
+      })
+      .lean();
+
+    // Filter out payments where studentId is null (due to unmatched studentFilter)
+    const filteredPayments = payments.filter((payment) => payment.studentId);
+
+    if (!filteredPayments.length) {
+      return res.status(404).json({ success: false, message: "No payments found" });
+    }
+
+    res.status(200).json({ success: true, count: filteredPayments.length, payments: filteredPayments });
   } catch (error) {
     console.error("Error fetching payments:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
-
-
-
 
 export const getStudentBalance = async (req, res) => {
   try {
@@ -327,23 +284,13 @@ export const getStudentBalance = async (req, res) => {
       sum + p.installments.reduce((s, inst) => s + inst.amount, 0), 0);
     const balance = totalFees - totalPaid;
 
-    res.status(200).json({ 
-      success: true, 
-      studentId, 
-      totalFees, 
-      totalPaid, 
-      balance 
-    });
+    res.status(200).json({ success: true, studentId, totalFees, totalPaid, balance });
   } catch (error) {
     console.error("Error fetching student balance:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
 
-
-
-
-// ✅ Get summary of fees for a session & term
 export const getFeesSummary = async (req, res) => {
   try {
     const { session, term } = req.query;
@@ -359,9 +306,9 @@ export const getFeesSummary = async (req, res) => {
       sum + p.installments.reduce((s, inst) => s + inst.amount, 0), 0);
     const totalBalance = totalFeesExpected - totalPaid;
 
-    const fullyPaidCount = payments.filter(p => p.status === "paid").length;
-    const partPaymentCount = payments.filter(p => p.status === "part payment").length;
-    const pendingCount = payments.filter(p => p.status === "pending").length;
+    const fullyPaidCount = payments.filter((p) => p.status === "paid").length;
+    const partPaymentCount = payments.filter((p) => p.status === "part payment").length;
+    const pendingCount = payments.filter((p) => p.status === "pending").length;
 
     res.status(200).json({
       success: true,
@@ -370,7 +317,7 @@ export const getFeesSummary = async (req, res) => {
       totalBalance,
       fullyPaidCount,
       partPaymentCount,
-      pendingCount
+      pendingCount,
     });
   } catch (error) {
     console.error("Error fetching fees summary:", error);
@@ -378,7 +325,6 @@ export const getFeesSummary = async (req, res) => {
   }
 };
 
-// ✅ Get summary per class
 export const getClassSummary = async (req, res) => {
   try {
     const { session, term } = req.query;
@@ -389,9 +335,8 @@ export const getClassSummary = async (req, res) => {
 
     const payments = await Payment.find(filter).populate("studentId", "classLevel");
 
-    // Group by classLevel
     const classMap = {};
-    payments.forEach(p => {
+    payments.forEach((p) => {
       const cls = p.studentId?.classLevel || "Unknown";
       if (!classMap[cls]) {
         classMap[cls] = { totalFeesExpected: 0, totalPaid: 0, balance: 0 };
@@ -401,9 +346,9 @@ export const getClassSummary = async (req, res) => {
       classMap[cls].balance += p.balance;
     });
 
-    const result = Object.keys(classMap).map(cls => ({
+    const result = Object.keys(classMap).map((cls) => ({
       classLevel: cls,
-      ...classMap[cls]
+      ...classMap[cls],
     }));
 
     res.status(200).json({ success: true, summary: result });
@@ -413,8 +358,6 @@ export const getClassSummary = async (req, res) => {
   }
 };
 
-
-// ✅ List students with outstanding balance
 export const getDebtors = async (req, res) => {
   try {
     const { session, term } = req.query;
@@ -425,7 +368,7 @@ export const getDebtors = async (req, res) => {
 
     const payments = await Payment.find(filter).populate("studentId", "firstName surName classLevel admissionNumber");
 
-    const debtors = payments.filter(p => p.balance > 0);
+    const debtors = payments.filter((p) => p.balance > 0);
 
     res.status(200).json({ success: true, count: debtors.length, debtors });
   } catch (error) {
@@ -434,16 +377,16 @@ export const getDebtors = async (req, res) => {
   }
 };
 
-
 export const approvePayment = async (req, res) => {
-    console.log("approve payment controller got hit");
-    
+  console.log("approve payment controller got hit");
 
   try {
     const { paymentId, installmentId } = req.body;
-     const adminId = req.user.id
+    const adminId = req.user.id;
 
-    const payment = await Payment.findById(paymentId);
+    const payment = await Payment.findById(paymentId)
+  .populate("studentId", "firstName surName classLevel"); 
+
 
     if (!payment) {
       return res.status(404).json({ success: false, message: "Payment not found" });
@@ -465,17 +408,50 @@ export const approvePayment = async (req, res) => {
 
     await payment.save();
 
+    const receiptResult = await generateReceipt(paymentId, installmentId);
+
     res.status(200).json({
       success: true,
-      message: "Installment approved successfully",
+      message: "Installment approved and receipt generated successfully",
       payment,
+      receipt: receiptResult,
     });
   } catch (error) {
     console.error("Error approving installment:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+    });
   }
 };
 
+// New endpoint to get receipt
+export const getReceipt = async (req, res) => {
+  try {
+    const { paymentId, installmentId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(paymentId) || !mongoose.Types.ObjectId.isValid(installmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid payment or installment ID" });
+    }
 
+    const payment = await Payment.findById(paymentId);
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment not found" });
+    }
 
+    const installment = payment.installments.id(installmentId);
+    if (!installment || !installment.receiptUrl) {
+      return res.status(404).json({ success: false, message: "Receipt not found" });
+    }
+
+    res.status(200).json({ success: true, receiptUrl: installment.receiptUrl });
+  } catch (error) {
+    console.error("Error fetching receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+    });
+  }
+};

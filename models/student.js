@@ -19,7 +19,7 @@ const studentSchema = new mongoose.Schema({
   // e.g., "Nursery 1", "Primary 5", "SS2"
 
   section: { type: String }, 
-  // e.g., "Science", "Arts" (for secondary)
+  // e.g., "Nursery", "Primary", "Secondary"
 
   address: { type: String },
   stateOfOrigin: { type: String },
@@ -41,6 +41,15 @@ const studentSchema = new mongoose.Schema({
   studentPhoto: { type: String }, 
 
   status: { type: String, enum: ["active", "graduated", "transferred", "Active", "Graduated", "Transferred"], default: "Active" },
+
+  promotionHistory: [{
+  fromClass: String,
+  toClass: String,
+  session: String,
+  promotionDate: Date,
+  reason: String,
+  promotedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
+}],
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
