@@ -1,17 +1,17 @@
 import mongoose from "mongoose";
 
+const classListSchema = new mongoose.Schema(
+  {
+    level: {
+      type: String,
+      required: [true, "Class level is required"],
+      unique: true,
+      trim: true,
+    },
+  },
+  { timestamps: true } // adds createdAt & updatedAt
+);
 
+const ClassList = mongoose.model("ClassList", classListSchema);
 
-const classSchema = new mongoose.Schema({
-    level: { type: String, required: true, unique: true },
-    order: { type: Number, required: true }, // For proper sequencing
-    section: { type: String }, // e.g., "Nursery", "Primary", "Secondary"
-    isGraduatingClass: { type: Boolean, default: false }, // Mark final classes
-    createdAt: { type: Date, default: Date.now }
-});
-
-// Ensure unique ordering
-classSchema.index({ order: 1 }, { unique: true });
-
-const ClassList = mongoose.model("ClassList", classSchema);
 export default ClassList;

@@ -1,13 +1,17 @@
 import Payment from "../models/payment.js";
 import Config from "../models/config.js";
-import { createFlutterwavePayment, createPaystackPayment } from "../utils/paymentGateway.js";
+import fs from "fs";
+import {
+  createFlutterwavePayment,
+  createPaystackPayment,
+} from "../utils/paymentGateway.js";
 import { upload } from "../config/cloudinary.js";
 import mongoose from "mongoose";
 import { generateReceipt } from "../utils/receipt.js";
 import crypto from "crypto";
 
 // Existing controllers (unchanged, included for completeness)
-export const manualPayment = async (req, res) => {
+export const addPayment = async (req, res) => {
   try {
     const {
       studentId,
@@ -21,16 +25,29 @@ export const manualPayment = async (req, res) => {
       status,
     } = req.body;
 
-    if (!studentId || !feeType || !session || !term || !totalAmount || !amount) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    if (
+      !studentId ||
+      !feeType ||
+      !session ||
+      !term ||
+      !totalAmount ||
+      !amount
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(studentId)) {
-      return res.status(400).json({ success: false, message: "Invalid student ID format" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid student ID format" });
     }
 
     if (!req.files || !req.files.image) {
-      return res.status(400).json({ success: false, message: "No teller image uploaded" });
+      return res
+        .status(400)
+        .json({ success: false, message: "No teller image uploaded" });
     }
 
     const { image } = req.files;
@@ -38,20 +55,40 @@ export const manualPayment = async (req, res) => {
     const imageSize = 1024; // KB
 
     if (!fileTypes.includes(image.mimetype)) {
-      return res.status(400).json({ success: false, error: "Image should be jpeg, jpg or png" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Image should be jpeg, jpg or png" });
     }
 
     if (image.size / 1024 > imageSize) {
-      return res.status(400).json({ success: false, error: `Image size should not be greater than ${imageSize}KB` });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: `Image size should not be greater than ${imageSize}KB`,
+        });
     }
 
-    const imageUrl = await upload(image.tempFilePath, studentId);
-
-    if (!imageUrl || !imageUrl.secure_url) {
-      return res.status(500).json({ success: false, message: "Image upload failed" });
+    // ✅ Upload image using tempFilePath
+    let imageUrl;
+    try {
+      imageUrl = await upload(image.tempFilePath, `payments/${studentId}`);
+    } catch (uploadErr) {
+      console.error("Cloudinary upload error:", uploadErr.message);
+      return res.status(503).json({
+        success: false,
+        message: "Cloudinary upload failed, please try again later.",
+      });
     }
 
-    // ✅ Check if payment already exists
+    // ✅ Cleanup temp file after upload
+    try {
+      fs.unlinkSync(image.tempFilePath);
+    } catch (err) {
+      console.warn("Failed to clean up temp file:", err.message);
+    }
+
+    // ✅ Check if payment already exists for same student + fee + session + term
     let payment = await Payment.findOne({ studentId, feeType, session, term });
 
     if (payment) {
@@ -85,29 +122,61 @@ export const manualPayment = async (req, res) => {
       await payment.save();
     }
 
-    res.status(200).json({ success: true, message: "Payment recorded successfully", payment });
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: "Payment recorded successfully",
+        payment,
+      });
   } catch (error) {
     console.error("Manual payment error:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error: process.env.NODE_ENV === "development" ? error.message : "Something went wrong",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Something went wrong",
     });
   }
 };
 
-
 export const initiatePayment = async (req, res) => {
   try {
-    const { studentId, feeType, description, session, term, totalAmount, amount, method, reference, email, name } = req.body;
+    const {
+      studentId,
+      feeType,
+      description,
+      session,
+      term,
+      totalAmount,
+      amount,
+      method,
+      reference,
+      email,
+      name,
+    } = req.body;
 
     let paymentLink;
 
     if (method === "flutterwave") {
-      const response = await createFlutterwavePayment({ amount, reference, email, name, description });
+      const response = await createFlutterwavePayment({
+        amount,
+        reference,
+        email,
+        name,
+        description,
+      });
       paymentLink = response.data.link;
     } else if (method === "paystack") {
-      const response = await createPaystackPayment({ amount, reference, email, name, description });
+      const response = await createPaystackPayment({
+        amount,
+        reference,
+        email,
+        name,
+        description,
+      });
       paymentLink = response.data.authorization_url;
     } else {
       return res.status(400).json({ message: "Invalid payment method" });
@@ -136,10 +205,11 @@ export const initiatePayment = async (req, res) => {
     res.status(200).json({ success: true, paymentLink, payment });
   } catch (error) {
     console.error("Payment initiation error:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error", error });
+    res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error", error });
   }
 };
-
 
 export const flutterwaveWebhook = async (req, res) => {
   try {
@@ -153,15 +223,22 @@ export const flutterwaveWebhook = async (req, res) => {
 
     const payload = req.body;
 
-    if (payload.event === "charge.completed" && payload.data.status === "successful") {
+    if (
+      payload.event === "charge.completed" &&
+      payload.data.status === "successful"
+    ) {
       const txId = payload.data.id;
       const verification = await verifyFlutterwavePayment(txId);
 
       if (verification.status === "success") {
-        const payment = await Payment.findOne({ "installments.reference": verification.data.tx_ref });
+        const payment = await Payment.findOne({
+          "installments.reference": verification.data.tx_ref,
+        });
 
         if (payment) {
-          const installment = payment.installments.find((inst) => inst.reference === verification.data.tx_ref);
+          const installment = payment.installments.find(
+            (inst) => inst.reference === verification.data.tx_ref
+          );
 
           if (installment) {
             installment.approved = true;
@@ -186,7 +263,10 @@ export const paystackWebhook = async (req, res) => {
     const config = await Config.findOne();
     const secret = config.paystackSecret;
 
-    const hash = crypto.createHmac("sha512", secret).update(JSON.stringify(req.body)).digest("hex");
+    const hash = crypto
+      .createHmac("sha512", secret)
+      .update(JSON.stringify(req.body))
+      .digest("hex");
 
     if (hash !== req.headers["x-paystack-signature"]) {
       return res.status(401).send("Invalid signature");
@@ -199,10 +279,14 @@ export const paystackWebhook = async (req, res) => {
       const verification = await verifyPaystackPayment(reference);
 
       if (verification.status && verification.data.status === "success") {
-        const payment = await Payment.findOne({ "installments.reference": reference });
+        const payment = await Payment.findOne({
+          "installments.reference": reference,
+        });
 
         if (payment) {
-          const installment = payment.installments.find((inst) => inst.reference === reference);
+          const installment = payment.installments.find(
+            (inst) => inst.reference === reference
+          );
 
           if (installment) {
             installment.approved = true;
@@ -225,7 +309,8 @@ export const paystackWebhook = async (req, res) => {
 export const getAllPayments = async (req, res) => {
   try {
     // Add filtering and search capabilities
-    const { session, term, status, studentName, classLevel, feeType } = req.query;
+    const { session, term, status, studentName, classLevel, feeType } =
+      req.query;
     let filter = {};
 
     if (session) filter.session = session;
@@ -238,20 +323,20 @@ export const getAllPayments = async (req, res) => {
     if (studentName) {
       studentFilter = {
         $or: [
-          { firstName: { $regex: studentName, $options: 'i' } },
-          { surName: { $regex: studentName, $options: 'i' } },
+          { firstName: { $regex: studentName, $options: "i" } },
+          { surName: { $regex: studentName, $options: "i" } },
         ],
       };
     }
     if (classLevel) {
-      studentFilter.classLevel = { $regex: classLevel, $options: 'i' };
+      studentFilter.classLevel = { $regex: classLevel, $options: "i" };
     }
 
     const payments = await Payment.find(filter)
       .populate({
-        path: 'studentId',
+        path: "studentId",
         match: studentFilter,
-        select: 'firstName surName classLevel section currentSession',
+        select: "firstName surName classLevel section currentSession",
       })
       .lean();
 
@@ -259,10 +344,18 @@ export const getAllPayments = async (req, res) => {
     const filteredPayments = payments.filter((payment) => payment.studentId);
 
     if (!filteredPayments.length) {
-      return res.status(404).json({ success: false, message: "No payments found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "No payments found" });
     }
 
-    res.status(200).json({ success: true, count: filteredPayments.length, payments: filteredPayments });
+    res
+      .status(200)
+      .json({
+        success: true,
+        count: filteredPayments.length,
+        payments: filteredPayments,
+      });
   } catch (error) {
     console.error("Error fetching payments:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
@@ -276,15 +369,24 @@ export const getStudentBalance = async (req, res) => {
     const payments = await Payment.find({ studentId });
 
     if (!payments.length) {
-      return res.status(404).json({ success: false, message: "No payments found for student" });
+      return res
+        .status(404)
+        .json({ success: false, message: "No payments found for student" });
     }
 
-    const totalFees = payments.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
-    const totalPaid = payments.reduce((sum, p) =>
-      sum + p.installments.reduce((s, inst) => s + inst.amount, 0), 0);
+    const totalFees = payments.reduce(
+      (sum, p) => sum + (p.totalAmount || 0),
+      0
+    );
+    const totalPaid = payments.reduce(
+      (sum, p) => sum + p.installments.reduce((s, inst) => s + inst.amount, 0),
+      0
+    );
     const balance = totalFees - totalPaid;
 
-    res.status(200).json({ success: true, studentId, totalFees, totalPaid, balance });
+    res
+      .status(200)
+      .json({ success: true, studentId, totalFees, totalPaid, balance });
   } catch (error) {
     console.error("Error fetching student balance:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
@@ -301,13 +403,20 @@ export const getFeesSummary = async (req, res) => {
 
     const payments = await Payment.find(filter);
 
-    const totalFeesExpected = payments.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
-    const totalPaid = payments.reduce((sum, p) =>
-      sum + p.installments.reduce((s, inst) => s + inst.amount, 0), 0);
+    const totalFeesExpected = payments.reduce(
+      (sum, p) => sum + (p.totalAmount || 0),
+      0
+    );
+    const totalPaid = payments.reduce(
+      (sum, p) => sum + p.installments.reduce((s, inst) => s + inst.amount, 0),
+      0
+    );
     const totalBalance = totalFeesExpected - totalPaid;
 
     const fullyPaidCount = payments.filter((p) => p.status === "paid").length;
-    const partPaymentCount = payments.filter((p) => p.status === "part payment").length;
+    const partPaymentCount = payments.filter(
+      (p) => p.status === "part payment"
+    ).length;
     const pendingCount = payments.filter((p) => p.status === "pending").length;
 
     res.status(200).json({
@@ -333,7 +442,10 @@ export const getClassSummary = async (req, res) => {
     if (session) filter.session = session;
     if (term) filter.term = term;
 
-    const payments = await Payment.find(filter).populate("studentId", "classLevel");
+    const payments = await Payment.find(filter).populate(
+      "studentId",
+      "classLevel"
+    );
 
     const classMap = {};
     payments.forEach((p) => {
@@ -341,8 +453,11 @@ export const getClassSummary = async (req, res) => {
       if (!classMap[cls]) {
         classMap[cls] = { totalFeesExpected: 0, totalPaid: 0, balance: 0 };
       }
-      classMap[cls].totalFeesExpected += (p.totalAmount || 0);
-      classMap[cls].totalPaid += p.installments.reduce((s, inst) => s + inst.amount, 0);
+      classMap[cls].totalFeesExpected += p.totalAmount || 0;
+      classMap[cls].totalPaid += p.installments.reduce(
+        (s, inst) => s + inst.amount,
+        0
+      );
       classMap[cls].balance += p.balance;
     });
 
@@ -366,7 +481,10 @@ export const getDebtors = async (req, res) => {
     if (session) filter.session = session;
     if (term) filter.term = term;
 
-    const payments = await Payment.find(filter).populate("studentId", "firstName surName classLevel admissionNumber");
+    const payments = await Payment.find(filter).populate(
+      "studentId",
+      "firstName surName classLevel admissionNumber"
+    );
 
     const debtors = payments.filter((p) => p.balance > 0);
 
@@ -384,22 +502,32 @@ export const approvePayment = async (req, res) => {
     const { paymentId, installmentId } = req.body;
     const adminId = req.user.id;
 
-    const payment = await Payment.findById(paymentId)
-  .populate("studentId", "firstName surName classLevel"); 
-
+    const payment = await Payment.findById(paymentId).populate(
+      "studentId",
+      "firstName surName classLevel"
+    );
 
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Payment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
     }
 
     const installment = payment.installments.id(installmentId);
 
     if (!installment) {
-      return res.status(404).json({ success: false, message: "Installment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Installment not found" });
     }
 
     if (installment.approved) {
-      return res.status(400).json({ success: false, message: "This installment is already approved" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "This installment is already approved",
+        });
     }
 
     installment.approved = true;
@@ -421,7 +549,10 @@ export const approvePayment = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Something went wrong",
     });
   }
 };
@@ -431,27 +562,30 @@ export const getReceipt = async (req, res) => {
   try {
     const { paymentId, installmentId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(paymentId) || !mongoose.Types.ObjectId.isValid(installmentId)) {
-      return res.status(400).json({ success: false, message: "Invalid payment or installment ID" });
-    }
-
     const payment = await Payment.findById(paymentId);
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Payment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
     }
 
     const installment = payment.installments.id(installmentId);
     if (!installment || !installment.receiptUrl) {
-      return res.status(404).json({ success: false, message: "Receipt not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Receipt not found" });
     }
 
-    res.status(200).json({ success: true, receiptUrl: installment.receiptUrl });
+    res.status(200).json({
+      success: true,
+      receiptUrl: installment.receiptUrl,
+    });
   } catch (error) {
     console.error("Error fetching receipt:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      error,
     });
   }
 };

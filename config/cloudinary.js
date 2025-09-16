@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {v2 as cloudinary} from "cloudinary";
+import path from "path"; 
 
 
 cloudinary.config(
@@ -28,22 +29,38 @@ export const isCloudinaryConnected = async () => {
 
 
 export const upload = async (file, folderName) => {
+  try {
+    // Get extension of the file
+    const ext = path.extname(file).toLowerCase();
 
-    try {
-        const options = {
-        folder: folderName,
-        public_id: `${folderName}/${Date.now()}`
+    // Default: images
+    let resourceType = "image";
+
+    if (
+      [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"].includes(ext)
+    ) {
+      resourceType = "raw"; // for documents
+    } else if ([".mp4", ".mov", ".avi", ".mkv", ".webm"].includes(ext)) {
+      resourceType = "video"; // for videos
     }
 
-  const image =  await cloudinary.uploader.upload(file, options)
-    return image
-        
-    } catch (error) {
-        console.log("cloudinary error", error);
-        throw error
-        
+    const options = {
+      folder: folderName,
+      public_id: `${Date.now()}`, // unique id per upload
+      resource_type: resourceType,
+      use_filename: true,
+      unique_filename: false,
+    };
+
+    // ✅ If it's a non-image (raw doc/pdf), force it as downloadable
+    if (resourceType === "raw") {
+      options.flags = "attachment";
     }
 
-    
-
-}
+    const result = await cloudinary.uploader.upload(file, options);
+    return result;
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    throw error;
+  }
+};
