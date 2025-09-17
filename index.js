@@ -43,7 +43,7 @@ app.use(fileUpload({
 
  connectDb()
 
- app.use("/auth", authRoute),
+ app.use("/auth", authRoute);
  app.use("/student", studentRoute);
  app.use("/class", classRoute);
  app.use("/teacher", teacherRoute);
