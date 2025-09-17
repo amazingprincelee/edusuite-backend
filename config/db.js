@@ -8,12 +8,12 @@ const CLOUD_URI = process.env.CLOUD_URI;
 
 export default async function connectDb() {
   try {
-    // Try connecting to Cloud first
-    // await mongoose.connect(CLOUD_URI);
-    // console.log("✅ Connected to Cloud MongoDB");
+   // Try connecting to Cloud first
+    await mongoose.connect(CLOUD_URI);
+    console.log("✅ Connected to Cloud MongoDB");
 
-    await mongoose.connect(LOCAL_URI);
-    console.log("✅ Connected to Local MongoDB");
+    // await mongoose.connect(LOCAL_URI);
+    // console.log("✅ Connected to Local MongoDB");
 
 
   } catch (error) {
