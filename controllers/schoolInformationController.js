@@ -64,7 +64,7 @@ export const getSchoolInfo = async (req, res)=>{
 
     try {
 
-        const schoolInfo = await SchoolInfo.find();
+        const schoolInfo = await SchoolInfo.findOne();
 
         res.status(200).json({message: "Found School Information", schoolInfo})
         
