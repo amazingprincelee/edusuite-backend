@@ -625,3 +625,24 @@ export const getPromotionSuggestions = async (req, res) => {
   }
 };
 
+// Delete student
+export const deleteStudent = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    await Student.findByIdAndDelete(studentId);
+
+    res.status(200).json({ message: "Student deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting student:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};

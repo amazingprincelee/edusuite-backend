@@ -1,4 +1,5 @@
 import express from "express";
+import { isAdmin } from "../middlewares/isAdmin.js";
 import {
   addStudent,
   getStudent,
@@ -10,18 +11,21 @@ import {
   bulkPromoteStudents,
   getPromotionSuggestions,
   updateStudent,
+  deleteStudent
 } from "../controllers/studentController.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 const router = express.Router();
 
-router.get("/all", getStudent);
-router.get("/id/:studentId", getStudentById);
-router.get("/class/:classLevel", getStudentByClass);
-router.post("/add", addStudent);
+router.get("/all",isAuthenticated, isAdmin, getStudent);
+router.get("/id/:studentId", isAuthenticated, isAdmin, getStudentById);
+router.get("/class/:classLevel", isAuthenticated, isAdmin, getStudentByClass);
+router.post("/add", isAuthenticated, isAdmin, addStudent);
 router.post("/upload-image/:studentId", uploadImage);
-router.put("/update/:studentId", updateStudent);
-router.put("/promote/:studentId", promoteStudent);
-router.put("/demote/:studentId", demoteStudent);
-router.post("/bulk-promote", bulkPromoteStudents);
-router.get("/promotion-suggestions/:currentClass", getPromotionSuggestions);
+router.put("/update/:studentId", isAuthenticated, isAdmin, updateStudent);
+router.delete("/:studentId", isAuthenticated, isAdmin, deleteStudent);
+router.put("/promote/:studentId", isAuthenticated, isAdmin, promoteStudent);
+router.put("/demote/:studentId", isAuthenticated, isAdmin, demoteStudent);
+router.post("/bulk-promote", isAuthenticated, isAdmin, bulkPromoteStudents);
+router.get("/promotion-suggestions/:currentClass", isAuthenticated, isAdmin, getPromotionSuggestions);
 
 export default router;
