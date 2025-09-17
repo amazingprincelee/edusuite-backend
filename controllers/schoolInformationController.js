@@ -1,5 +1,5 @@
 import SchoolInfo from "../models/schoolInformation.js";
-import {upload, isCloudinaryConnected} from "../config/cloudinary.js"
+import {upload, isCloudinaryConnected, deleteFromCloudinary} from "../config/cloudinary.js"
 
 
 export const addInformation = async (req, res)=>{
@@ -32,6 +32,32 @@ export const addInformation = async (req, res)=>{
     }
     
 };
+
+export const deleteSchoolInfo = async (req, res) => {
+  try {
+    const schoolId = req.params.schoolId;
+    
+    const deletedSchoolInfo = await SchoolInfo.findByIdAndDelete(schoolId);
+    
+    if (!deletedSchoolInfo) {
+      return res.status(404).json({ message: "School information not found" });
+    }
+    
+    // If there's a school logo, delete it from Cloudinary too
+    if (deletedSchoolInfo.schoolLogo) {
+      try {
+        await deleteFromCloudinary(deletedSchoolInfo.schoolLogo);
+      } catch (cloudinaryError) {
+        console.error("Error deleting from Cloudinary:", cloudinaryError);
+      }
+    }
+    
+    res.status(200).json({ message: "School information deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
 
 
 export const getSchoolInfo = async (req, res)=>{
@@ -155,6 +181,28 @@ export const uploadImage = async (req, res) => {
   }
 };
 
+export const deleteSchoolLogo = async (req, res) => {
+  try {
+    const school = await SchoolInfo.findOne();
+
+    if (!school || !school.schoolLogo) {
+      return res.status(404).json({ message: "School logo not found" });
+    }
+
+    // Delete from Cloudinary
+    await deleteFromCloudinary(school.schoolLogo);
+
+    // Remove from database
+    school.schoolLogo = undefined;
+    await school.save();
+
+    res.status(200).json({ message: "School logo deleted successfully" });
+  } catch (error) {
+    console.error("Delete school logo error:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
 
 
 export const uploadGallery = async (req, res) => {
@@ -221,3 +269,51 @@ export const uploadGallery = async (req, res) => {
 
 
 
+export const getGallery = async (req, res) => {
+  try {
+    const school = await SchoolInfo.findOne();
+    
+    if (!school || !school.photoGallery) {
+      return res.status(200).json({ photoGallery: [] });
+    }
+    
+    res.status(200).json({ photoGallery: school.photoGallery });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+export const deleteGalleryImage = async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+    
+    if (!imageUrl) {
+      return res.status(400).json({ message: "Image URL is required" });
+    }
+    
+    const school = await SchoolInfo.findOne();
+    
+    if (!school || !school.photoGallery || school.photoGallery.length === 0) {
+      return res.status(404).json({ message: "Gallery image not found" });
+    }
+    
+    // Check if image exists in gallery
+    const imageIndex = school.photoGallery.indexOf(imageUrl);
+    if (imageIndex === -1) {
+      return res.status(404).json({ message: "Gallery image not found" });
+    }
+    
+    // Delete from Cloudinary
+    await deleteFromCloudinary(imageUrl);
+    
+    // Remove from array
+    school.photoGallery.splice(imageIndex, 1);
+    await school.save();
+    
+    res.status(200).json({ message: "Gallery image deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};

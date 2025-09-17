@@ -64,3 +64,25 @@ export const upload = async (file, folderName) => {
     throw error;
   }
 };
+
+
+export const deleteFromCloudinary = async (fileUrl) => {
+  try {
+    if (!fileUrl) return;
+
+    // Extract public_id from the fileUrl
+    const parts = fileUrl.split("/");
+    const filename = parts.pop(); // e.g., "1694954123000.png"
+    const folder = parts.slice(parts.indexOf("upload") + 1).join("/"); // e.g., "school_folder"
+    const publicId = `${folder}/${filename.split(".")[0]}`; // e.g., "school_folder/1694954123000"
+
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image", // adjust if you have videos/docs
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Cloudinary delete error:", error);
+    throw error;
+  }
+};
