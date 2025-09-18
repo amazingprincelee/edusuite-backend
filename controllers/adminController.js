@@ -1,5 +1,6 @@
 import Payment from "../models/payment.js";
 import Student from "../models/student.js";
+import User from "../models/user.js";
 
 
 export const getAdminDashboard = async (req, res) => {
