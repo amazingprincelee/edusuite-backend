@@ -1,7 +1,8 @@
 import express from "express";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
-import { getAdminDashboard, getAllParents } from "../controllers/adminController.js";
+import { getAdminDashboard, getAllParents, getParentsWithChildren } from "../controllers/adminController.js";
+import { getClass } from "../controllers/classController.js"
 import { register } from "../controllers/authcontrollers.js"
 import { 
   getAllPayments,
@@ -20,7 +21,9 @@ router.get("/fees/summary", isAdmin, getFeesSummary);
 router.get("/fees/class-summary", isAdmin, getClassSummary);
 router.get("/student/:studentId/balance", isAdmin, getStudentBalance); 
 router.get("/all-parents", isAuthenticated, isAdmin, getAllParents)
-router.get("/debtors", isAdmin, getDebtors); 
+router.get("/parent-withchildren", isAuthenticated, isAdmin, getParentsWithChildren)
+router.get("/debtors", isAuthenticated, isAdmin, getDebtors); 
+router.get('/all-classes', isAuthenticated, isAdmin, getClass)
 
 router.post("/register-parent", isAuthenticated, isAdmin, register)             
 

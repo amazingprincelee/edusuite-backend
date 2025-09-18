@@ -57,3 +57,35 @@ export const getAllParents = async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 };
+
+
+export const getParentsWithChildren = async (req, res) => {
+  try {
+    // Find all parents
+    const parents = await User.find({ role: "parent" }).lean();
+
+    if (!parents || parents.length === 0) {
+      return res.status(404).json({ message: "No parents found" });
+    }
+
+    // Attach children to each parent
+    const parentsWithChildren = await Promise.all(
+      parents.map(async (parent) => {
+        const children = await Student.find({ parentId: parent._id }).lean();
+        return {
+          ...parent,
+          children, // attach the student's list here
+        };
+      })
+    );
+
+    res.status(200).json({
+      success: true,
+      count: parentsWithChildren.length,
+      parents: parentsWithChildren,
+    });
+  } catch (error) {
+    console.error("Error fetching parents with children:", error);
+    res.status(500).json({ message: "Server error", error });
+  }
+};
