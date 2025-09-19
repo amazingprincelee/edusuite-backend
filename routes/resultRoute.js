@@ -1,8 +1,24 @@
 import express from "express";
-import { enterResult, getStudentResults } from "../controllers/resultController.js";
+import { 
+  enterResult, 
+  getStudentResults,
+  getParentChildrenResults,
+  getClassResultsSummary,
+  bulkUpdateResults
+} from "../controllers/resultController.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
+
 const router = express.Router();
 
-router.post("/", enterResult);  
-router.get("/:studentId", getStudentResults);
+// Basic result routes
+router.post("/", isAuthenticated, enterResult);  
+router.get("/student/:studentId", isAuthenticated, getStudentResults);
+
+// Parent routes
+router.get("/parent/children", isAuthenticated, getParentChildrenResults);
+
+// Teacher routes
+router.get("/class/summary", isAuthenticated, getClassResultsSummary);
+router.put("/bulk-update", isAuthenticated, bulkUpdateResults);
 
 export default router;

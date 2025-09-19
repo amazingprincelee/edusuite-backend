@@ -141,6 +141,184 @@ export const addPayment = async (req, res) => {
   }
 };
 
+// Financial Reports Functions
+export const getFinancialReports = async (req, res) => {
+  try {
+    const { session, term, startDate, endDate } = req.query;
+
+    let filter = {};
+    if (session) filter.session = session;
+    if (term) filter.term = term;
+    
+    // Date range filter for installments
+    let dateFilter = {};
+    if (startDate || endDate) {
+      dateFilter = {};
+      if (startDate) dateFilter.$gte = new Date(startDate);
+      if (endDate) dateFilter.$lte = new Date(endDate);
+    }
+
+    const payments = await Payment.find(filter).populate('studentId', 'firstName surName classLevel admissionNumber');
+
+    // Overall Financial Summary
+    const totalFeesExpected = payments.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+    const totalPaid = payments.reduce((sum, p) => {
+      return sum + p.installments
+        .filter(inst => inst.approved && (!startDate && !endDate || 
+          (dateFilter.$gte ? inst.date >= dateFilter.$gte : true) &&
+          (dateFilter.$lte ? inst.date <= dateFilter.$lte : true)))
+        .reduce((s, inst) => s + inst.amount, 0);
+    }, 0);
+    const totalBalance = totalFeesExpected - totalPaid;
+
+    // Payment Status Distribution
+    const statusDistribution = {
+      completed: payments.filter(p => p.status === 'completed').length,
+      partial: payments.filter(p => p.status === 'partial').length,
+      pending: payments.filter(p => p.status === 'pending').length
+    };
+
+    // Fee Type Analysis
+    const feeTypeAnalysis = {};
+    payments.forEach(p => {
+      if (!feeTypeAnalysis[p.feeType]) {
+        feeTypeAnalysis[p.feeType] = { expected: 0, paid: 0, balance: 0, count: 0 };
+      }
+      feeTypeAnalysis[p.feeType].expected += p.totalAmount || 0;
+      feeTypeAnalysis[p.feeType].paid += p.installments
+        .filter(inst => inst.approved)
+        .reduce((s, inst) => s + inst.amount, 0);
+      feeTypeAnalysis[p.feeType].balance += p.balance;
+      feeTypeAnalysis[p.feeType].count += 1;
+    });
+
+    // Class Level Analysis
+    const classAnalysis = {};
+    payments.forEach(p => {
+      const classLevel = p.studentId?.classLevel || 'Unknown';
+      if (!classAnalysis[classLevel]) {
+        classAnalysis[classLevel] = { expected: 0, paid: 0, balance: 0, studentCount: 0 };
+      }
+      classAnalysis[classLevel].expected += p.totalAmount || 0;
+      classAnalysis[classLevel].paid += p.installments
+        .filter(inst => inst.approved)
+        .reduce((s, inst) => s + inst.amount, 0);
+      classAnalysis[classLevel].balance += p.balance;
+      classAnalysis[classLevel].studentCount += 1;
+    });
+
+    // Payment Method Analysis
+    const methodAnalysis = {};
+    payments.forEach(p => {
+      p.installments.filter(inst => inst.approved).forEach(inst => {
+        if (!methodAnalysis[inst.method]) {
+          methodAnalysis[inst.method] = { amount: 0, count: 0 };
+        }
+        methodAnalysis[inst.method].amount += inst.amount;
+        methodAnalysis[inst.method].count += 1;
+      });
+    });
+
+    // Monthly Revenue Trend (last 12 months)
+    const monthlyRevenue = [];
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+
+      const monthlyTotal = payments.reduce((sum, p) => {
+        return sum + p.installments
+          .filter(inst => inst.approved && inst.date >= monthStart && inst.date <= monthEnd)
+          .reduce((s, inst) => s + inst.amount, 0);
+      }, 0);
+
+      monthlyRevenue.push({
+        month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        revenue: monthlyTotal
+      });
+    }
+
+    // Top Debtors
+    const topDebtors = payments
+      .filter(p => p.balance > 0)
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 10)
+      .map(p => ({
+        studentName: `${p.studentId?.firstName} ${p.studentId?.surName}`,
+        admissionNumber: p.studentId?.admissionNumber,
+        classLevel: p.studentId?.classLevel,
+        feeType: p.feeType,
+        totalAmount: p.totalAmount,
+        balance: p.balance,
+        session: p.session,
+        term: p.term
+      }));
+
+    // Recent Payments
+    const recentPayments = [];
+    payments.forEach(p => {
+      p.installments
+        .filter(inst => inst.approved)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5)
+        .forEach(inst => {
+          recentPayments.push({
+            studentName: `${p.studentId?.firstName} ${p.studentId?.surName}`,
+            admissionNumber: p.studentId?.admissionNumber,
+            feeType: p.feeType,
+            amount: inst.amount,
+            method: inst.method,
+            date: inst.date,
+            approvedBy: inst.approvedBy
+          });
+        });
+    });
+
+    recentPayments.sort((a, b) => new Date(b.date) - new Date(a.date));
+    const limitedRecentPayments = recentPayments.slice(0, 20);
+
+    res.status(200).json({
+      success: true,
+      summary: {
+        totalFeesExpected,
+        totalPaid,
+        totalBalance,
+        collectionRate: totalFeesExpected > 0 ? ((totalPaid / totalFeesExpected) * 100).toFixed(2) : 0
+      },
+      statusDistribution,
+      feeTypeAnalysis: Object.keys(feeTypeAnalysis).map(type => ({
+        feeType: type,
+        ...feeTypeAnalysis[type],
+        collectionRate: feeTypeAnalysis[type].expected > 0 ? 
+          ((feeTypeAnalysis[type].paid / feeTypeAnalysis[type].expected) * 100).toFixed(2) : 0
+      })),
+      classAnalysis: Object.keys(classAnalysis).map(cls => ({
+        classLevel: cls,
+        ...classAnalysis[cls],
+        collectionRate: classAnalysis[cls].expected > 0 ? 
+          ((classAnalysis[cls].paid / classAnalysis[cls].expected) * 100).toFixed(2) : 0
+      })),
+      methodAnalysis: Object.keys(methodAnalysis).map(method => ({
+        method,
+        ...methodAnalysis[method],
+        percentage: totalPaid > 0 ? ((methodAnalysis[method].amount / totalPaid) * 100).toFixed(2) : 0
+      })),
+      monthlyRevenue,
+      topDebtors,
+      recentPayments: limitedRecentPayments
+    });
+
+  } catch (error) {
+    console.error('Error generating financial reports:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal Server Error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
 export const initiatePayment = async (req, res) => {
   try {
     const {

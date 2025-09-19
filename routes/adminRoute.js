@@ -10,6 +10,7 @@ import {
   getFeesSummary,
   getClassSummary,
   getDebtors,
+  getFinancialReports,
 } from "../controllers/paymentControllers.js";
 
 
@@ -24,6 +25,7 @@ router.get("/all-parents", isAuthenticated, isAdmin, getAllParents)
 router.get("/parent-withchildren", isAuthenticated, isAdmin, getParentsWithChildren)
 router.get("/debtors", isAuthenticated, isAdmin, getDebtors); 
 router.get('/all-classes', isAuthenticated, isAdmin, getClass)
+router.get("/financial-reports", isAuthenticated, isAdmin, getFinancialReports);
 
 router.post("/register-parent", isAuthenticated, isAdmin, register)             
 
