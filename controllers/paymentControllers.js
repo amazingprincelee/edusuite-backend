@@ -7,7 +7,6 @@ import {
 } from "../utils/paymentGateway.js";
 import { upload } from "../config/cloudinary.js";
 import mongoose from "mongoose";
-import { generateReceipt } from "../utils/receipt.js";
 import crypto from "crypto";
 
 // Existing controllers (unchanged, included for completeness)
@@ -504,8 +503,8 @@ export const approvePayment = async (req, res) => {
 
     const payment = await Payment.findById(paymentId).populate(
       "studentId",
-      "firstName surName classLevel"
-    );
+      "firstName surName admissionNumber classLevel section"
+    ).populate('installments.approvedBy', 'fullname');
 
     if (!payment) {
       return res
@@ -536,13 +535,10 @@ export const approvePayment = async (req, res) => {
 
     await payment.save();
 
-    const receiptResult = await generateReceipt(paymentId, installmentId);
-
     res.status(200).json({
       success: true,
-      message: "Installment approved and receipt generated successfully",
+      message: "Installment approved successfully",
       payment,
-      receipt: receiptResult,
     });
   } catch (error) {
     console.error("Error approving installment:", error);
@@ -557,12 +553,15 @@ export const approvePayment = async (req, res) => {
   }
 };
 
-// New endpoint to get receipt
-export const getReceipt = async (req, res) => {
+// New endpoint to get receipt data
+export const getReceiptData = async (req, res) => {
   try {
     const { paymentId, installmentId } = req.params;
 
-    const payment = await Payment.findById(paymentId);
+    const payment = await Payment.findById(paymentId)
+      .populate('studentId', 'firstName surName admissionNumber classLevel section')
+      .populate('installments.approvedBy', 'fullname');
+    
     if (!payment) {
       return res
         .status(404)
@@ -570,22 +569,55 @@ export const getReceipt = async (req, res) => {
     }
 
     const installment = payment.installments.id(installmentId);
-    if (!installment || !installment.receiptUrl) {
+    if (!installment || !installment.approved) {
       return res
         .status(404)
-        .json({ success: false, message: "Receipt not found" });
+        .json({ success: false, message: "Approved installment not found" });
     }
+
+    // Fetch school information
+    const SchoolInfo = (await import("../models/schoolInformation.js")).default;
+    const schoolInfo = await SchoolInfo.findOne();
+
+    // Prepare receipt data
+    const receiptData = {
+      receiptId: installmentId,
+      date: new Date(installment.approvedAt || installment.date).toLocaleDateString(),
+      student: {
+        name: `${payment.studentId.firstName} ${payment.studentId.surName}`,
+        admissionNumber: payment.studentId.admissionNumber || 'N/A',
+        class: `${payment.studentId.classLevel} - ${payment.studentId.section || ''}`,
+      },
+      payment: {
+        feeType: payment.feeType.charAt(0).toUpperCase() + payment.feeType.slice(1),
+        description: payment.description || 'N/A',
+        session: payment.session,
+        term: payment.term.charAt(0).toUpperCase() + payment.term.slice(1),
+        method: installment.method.charAt(0).toUpperCase() + installment.method.slice(1),
+        reference: installment.reference || null,
+        amountPaid: installment.amount,
+        totalAmount: payment.totalAmount,
+        balance: payment.balance,
+      },
+      school: {
+        name: schoolInfo?.schoolName || 'School Name',
+        address: schoolInfo?.schoolAddress || 'School Address',
+        motto: schoolInfo?.schoolMotto || null,
+      },
+      approver: installment.approvedBy?.fullname || 'System',
+      generatedAt: new Date().toLocaleDateString(),
+    };
 
     res.status(200).json({
       success: true,
-      receiptUrl: installment.receiptUrl,
+      receiptData,
     });
   } catch (error) {
-    console.error("Error fetching receipt:", error);
+    console.error("Error fetching receipt data:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
-      error,
+      error: process.env.NODE_ENV === "development" ? error.message : "Something went wrong",
     });
   }
 };

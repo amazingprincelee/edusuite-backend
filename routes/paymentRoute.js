@@ -1,13 +1,13 @@
 import express from "express";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
-import { addPayment, paystackWebhook, flutterwaveWebhook, initiatePayment, getAllPayments, approvePayment, getReceipt } from "../controllers/paymentControllers.js"
+import { addPayment, paystackWebhook, flutterwaveWebhook, initiatePayment, getAllPayments, approvePayment, getReceiptData } from "../controllers/paymentControllers.js"
 
 const router = express.Router()
 
 router.get('/', isAuthenticated, isAdmin, getAllPayments )
-// Fix the route to match the frontend call - it should have parameters
-router.get('/get-receipt/:paymentId/:installmentId', isAuthenticated, getReceipt)
+// Updated route to get receipt data instead of PDF URL
+router.get('/get-receipt-data/:paymentId/:installmentId', isAuthenticated, getReceiptData)
 router.post('/add-payment', isAuthenticated ,isAdmin, addPayment);
 router.post("/online-payment", initiatePayment );
 router.post("/webhook/paystack", paystackWebhook);
