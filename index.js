@@ -17,6 +17,7 @@ import configRoute from "./routes/configRoute.js";
 import examRoute from "./routes/examRoute.js";
 import resultRoute from "./routes/resultRoute.js";
 import notificationRoute from "./routes/notificationRoute.js";
+import parentRoute from "./routes/parentRoute.js";
 
 
 
@@ -56,6 +57,7 @@ app.use(fileUpload({
  app.use("/exams", examRoute);
  app.use("/result", resultRoute);
  app.use("/notifications", notificationRoute);
+ app.use("/parent", parentRoute);
 
 
 

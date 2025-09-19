@@ -19,8 +19,7 @@ export const login = async (req, res)=> {
         //remove extra space and bring down to lowercase
         username = username.trim().toLowerCase();
 
-        console.log(username);
-        console.log(password);
+       
         
 
         const user = await User.findOne({$or: [{phone: username}, {email: username}]});
