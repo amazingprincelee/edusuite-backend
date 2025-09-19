@@ -1,7 +1,5 @@
-import Teacher from "../models/teachers.js";
 import User from "../models/user.js";
-import crypto from "crypto";
-import bcrypt from "bcrypt";
+import { register } from "./authcontrollers.js";
 
 
 
@@ -10,67 +8,67 @@ export const addTeacher = async (req, res) => {
     const {
       fullname,
       email,
+      password,
       phone,
       gender,
       address,
-      salary,
       subjects,
       designation,
+      salary,
+      status,
       bankName,
       bankAccount,
-      accountName,
+      accountName
     } = req.body;
 
-    // 1. Check if teacher already exists
-    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
-    if (existingUser) {
-      return res.status(400).json({ message: "Teacher with this email or phone already exists" });
-    }
-
-    // 2. Generate random password
-    const randomPassword = crypto.randomBytes(6).toString("hex");
-    const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
-    // 3. Create User
-    const newUser = await User.create({
+    // Prepare the request body for the auth controller register function
+    const teacherData = {
       fullname,
       email,
+      password,
       phone,
-      password: hashedPassword,
       gender,
       address,
       role: "teacher",
-      salary,
       subjects,
       designation,
-    });
+      salary,
+      status,
+      bankName,
+      bankAccount,
+      accountName
+    };
 
-    // 4. Create Teacher linked to User
-    const newTeacher = await Teacher.create({
-      userId: newUser._id,
-      status: "full time", // default
-      bankDetails: { bankName, bankAccount, accountName },
-    });
+    // Create a mock request object for the auth controller
+    const mockReq = {
+      body: teacherData
+    };
 
-    // 5. Send email with login credentials
-    // const emailMessage = `
-    //   Hello ${fullname},
-    //   Your teacher account has been created.
-    //   Email: ${email}
-    //   Password: ${randomPassword}
-    //   Please login and change your password.
-    // `;
+    // Create a mock response object to capture the auth controller response
+    const mockRes = {
+      status: (code) => ({
+        json: (data) => {
+          if (code === 201) {
+            // Success - teacher registered
+            res.status(201).json({
+              message: "Teacher created successfully and login credentials sent via email",
+              teacher: data.newUser,
+              credentialsInfo: data.credentialsInfo
+            });
+          } else {
+            // Error occurred
+            res.status(code).json(data);
+          }
+        }
+      })
+    };
 
-    // await sendEmail(email, "Your Teacher Account", emailMessage);
+    // Use the auth controller register function
+    await register(mockReq, mockRes);
 
-    res.status(201).json({
-      message: "Teacher created successfully and login credentials sent via email",
-      teacher: newTeacher,
-      user: { email, fullname },
-    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal Server Error", error });
+    res.status(500).json({ message: "Internal Server Error", error: error.message });
   }
 };
 
@@ -79,56 +77,53 @@ export const updateTeacher = async (req, res) => {
   try {
     const {
       userId,
+      fullname,
+      email,
+      phone,
+      gender,
+      address,
       salary,
       subjects,
       designation,
-      bankName,
-      bankAccount,
-      accountName,
     } = req.body;
 
-    // 1. Find the teacher record linked to the user
-    const teacher = await Teacher.findOne({ userId });
-    if (!teacher) {
+    // Find the user with teacher role
+    const user = await User.findById(userId);
+    if (!user || user.role !== "teacher") {
       return res.status(404).json({ message: "Teacher not found" });
     }
 
-    // 2. Update Teacher document
-    teacher.bankDetails = {
-      bankName: bankName || teacher.bankDetails.bankName,
-      bankAccount: bankAccount || teacher.bankDetails.bankAccount,
-      accountName: accountName || teacher.bankDetails.accountName,
-    };
-    teacher.updatedAt = Date.now();
-
-    await teacher.save();
-
-    // 3. Update User document
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "Linked user not found" });
-    }
-
-    user.salary = salary !== undefined ? salary : user.salary;
-    user.subjects = subjects && subjects.length ? subjects : user.subjects;
-    user.designation = designation || user.designation;
+    // Update user fields
+    if (fullname) user.fullname = fullname;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (gender) user.gender = gender;
+    if (address) user.address = address;
+    if (salary !== undefined) user.salary = salary;
+    if (subjects && subjects.length) user.subjects = subjects;
+    if (designation) user.designation = designation;
 
     await user.save();
 
     res.status(200).json({
       message: "Teacher updated successfully",
-      teacher,
-      user: {
+      teacher: {
+        _id: user._id,
         fullname: user.fullname,
         email: user.email,
+        phone: user.phone,
+        gender: user.gender,
+        address: user.address,
         salary: user.salary,
         subjects: user.subjects,
         designation: user.designation,
+        role: user.role,
+        createdAt: user.createdAt
       },
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal Server Error", error });
+    res.status(500).json({ message: "Internal Server Error", error: error.message });
   }
 };
 
@@ -153,22 +148,23 @@ export const deleteTeacher = async (req, res) => {
   try {
     const { teacherId } = req.params;
 
-    // Find the user
+    // Find the user with teacher role
     const user = await User.findById(teacherId);
     if (!user || user.role !== "teacher") {
       return res.status(404).json({ message: "Teacher not found" });
     }
 
-    // Find and delete the linked teacher record
-    const teacher = await Teacher.findOneAndDelete({ userId: teacherId });
-    if (!teacher) {
-      return res.status(404).json({ message: "Teacher record not found" });
-    }
-
     // Delete the user
     await User.findByIdAndDelete(teacherId);
 
-    res.status(200).json({ message: "Teacher deleted successfully" });
+    res.status(200).json({ 
+      message: "Teacher deleted successfully",
+      deletedTeacher: {
+        _id: user._id,
+        fullname: user.fullname,
+        email: user.email
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal Server Error", error: error.message });

@@ -2,7 +2,6 @@
 import Exam from "../models/exams.js";
 import Result from "../models/result.js";
 import Student from "../models/student.js";
-import Teacher from "../models/teachers.js";
 import User from "../models/user.js";
 import Notification from "../models/notification.js";
 
@@ -31,17 +30,15 @@ export const getExams = async (req, res) => {
 // Get teacher's assigned classes and subjects
 export const getTeacherClasses = async (req, res) => {
   try {
-    const teacher = await Teacher.findOne({ user: req.user._id })
-      .populate('assignedClasses')
-      .populate('subjects');
+    const teacher = await User.findById(req.user._id);
     
-    if (!teacher) {
+    if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
     res.status(200).json({
-      classes: teacher.assignedClasses,
-      subjects: teacher.subjects
+      classes: [], // TODO: Implement class assignment logic
+      subjects: teacher.subjects || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -68,8 +65,8 @@ export const addCAScores = async (req, res) => {
     const { classId, subject, term, session, scores } = req.body;
     
     // Validate teacher authorization
-    const teacher = await Teacher.findOne({ user: req.user._id });
-    if (!teacher) {
+    const teacher = await User.findById(req.user._id);
+    if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
@@ -124,8 +121,8 @@ export const addExamScores = async (req, res) => {
     const { classId, subject, term, session, scores } = req.body;
     
     // Validate teacher authorization
-    const teacher = await Teacher.findOne({ user: req.user._id });
-    if (!teacher) {
+    const teacher = await User.findById(req.user._id);
+    if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
@@ -180,8 +177,8 @@ export const generateResults = async (req, res) => {
     const { classId, subject, term, session } = req.body;
     
     // Validate teacher authorization
-    const teacher = await Teacher.findOne({ user: req.user._id });
-    if (!teacher) {
+    const teacher = await User.findById(req.user._id);
+    if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
@@ -363,8 +360,8 @@ export const getClassScores = async (req, res) => {
     const { classId, subject, term, session } = req.query;
     
     // Validate teacher authorization
-    const teacher = await Teacher.findOne({ user: req.user._id });
-    if (!teacher) {
+    const teacher = await User.findById(req.user._id);
+    if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
@@ -424,12 +421,13 @@ export const getExamAnalytics = async (req, res) => {
     });
 
     // Get total teachers
-    const totalTeachers = await Teacher.countDocuments();
+    const totalTeachers = await User.countDocuments({ role: "teacher" });
 
     // Get teachers who haven't submitted results
-    const teachersWithoutResults = await Teacher.find({
+    const teachersWithoutResults = await User.find({
+      role: "teacher",
       _id: { $nin: teachersWithResults }
-    }).populate('userId', 'fullname email phone');
+    }).select('fullname email phone');
 
     // Get top performing students
     const topStudents = await Result.aggregate([
@@ -545,10 +543,10 @@ export const getExamAnalytics = async (req, res) => {
       subjectStats,
       teachersWithoutResults: teachersWithoutResults.map(teacher => ({
         _id: teacher._id,
-        name: teacher.userId?.fullname,
-        email: teacher.userId?.email,
-        phone: teacher.userId?.phone,
-        status: teacher.status
+        name: teacher.fullname,
+        email: teacher.email,
+        phone: teacher.phone,
+        status: "active"
       })),
       recentSubmissions: recentSubmissions.map(result => ({
         _id: result._id,
@@ -569,8 +567,8 @@ export const getTeacherSubmissionStatus = async (req, res) => {
   try {
     const { term, session } = req.query;
     
-    const teachers = await Teacher.find()
-      .populate('userId', 'fullname email phone');
+    const teachers = await User.find({ role: "teacher" })
+      .select('fullname email phone');
 
     const teacherStatus = await Promise.all(
       teachers.map(async (teacher) => {
@@ -594,10 +592,10 @@ export const getTeacherSubmissionStatus = async (req, res) => {
 
         return {
           _id: teacher._id,
-          name: teacher.userId?.fullname,
-          email: teacher.userId?.email,
-          phone: teacher.userId?.phone,
-          status: teacher.status,
+          name: teacher.fullname,
+          email: teacher.email,
+          phone: teacher.phone,
+          status: "active", // Default status since User model doesn't have status field
           resultCount,
           subjects,
           subjectCount: subjects.length,

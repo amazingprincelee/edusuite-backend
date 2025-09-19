@@ -8,9 +8,9 @@ const teacherSchema = new mongoose.Schema({
     default: "full time",
   },
   bankDetails: {
-    bankName: { type: String, required: true },
-    bankAccount: { type: String, required: true },
-    accountName: { type: String, required: true },
+    bankName: { type: String, required: false },
+    bankAccount: { type: String, required: false },
+    accountName: { type: String, required: false },
   },
 
   createdAt: { type: Date, default: Date.now },

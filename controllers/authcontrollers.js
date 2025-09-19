@@ -1,5 +1,6 @@
 
 import User from "../models/user.js";
+import Teacher from "../models/teachers.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sendUserCredentials } from "../utils/node-mailer.js";
@@ -52,7 +53,9 @@ export const register = async (req, res) => {
 
     try {
 
-        const {fullname, phone, address, email, password, role, gender} = req.body;
+        const {fullname, phone, address, email, password, role, gender, 
+               // Teacher-specific fields
+               salary, designation, subjects, status, bankName, bankAccount, accountName} = req.body;
 
         const user = await User.findOne({
             $or: [
@@ -87,7 +90,8 @@ export const register = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, saltRound);
 
-        const newUser = new User({
+        // Prepare user data
+        const userData = {
             fullname: fullname,
             phone: phone,
             email: email, 
@@ -96,9 +100,44 @@ export const register = async (req, res) => {
             password: hashedPassword,
             generatedParentPassword: generatedPassword, // Store for both teachers and parents
             role: role
-        });
+        };
+
+        // Add teacher-specific fields if role is teacher
+        if (role === 'teacher') {
+            if (salary) userData.salary = salary;
+            if (designation) userData.designation = designation;
+            if (subjects) {
+                // Handle subjects as array or comma-separated string
+                userData.subjects = Array.isArray(subjects) 
+                    ? subjects 
+                    : subjects.split(',').map(s => s.trim()).filter(s => s);
+            }
+        }
+
+        const newUser = new User(userData);
 
         await newUser.save();
+
+        // Create Teacher record if role is teacher
+        let teacherRecord = null;
+        if (role === 'teacher') {
+            const teacherData = {
+                userId: newUser._id,
+                status: status || 'full time' // Default to full time if not provided
+            };
+
+            // Add bank details if provided (check for non-empty values)
+            if (bankName || bankAccount || accountName) {
+                teacherData.bankDetails = {
+                    bankName: bankName || '',
+                    bankAccount: bankAccount || '',
+                    accountName: accountName || ''
+                };
+            }
+
+            teacherRecord = new Teacher(teacherData);
+            await teacherRecord.save();
+        }
 
         // Prepare response based on role
         const response = {
@@ -111,7 +150,18 @@ export const register = async (req, res) => {
                 role: newUser.role,
                 address: newUser.address,
                 gender: newUser.gender,
-                createdAt: newUser.createdAt
+                createdAt: newUser.createdAt,
+                // Include teacher-specific fields if role is teacher
+                ...(role === 'teacher' && {
+                    salary: newUser.salary,
+                    designation: newUser.designation,
+                    subjects: newUser.subjects,
+                    teacherInfo: teacherRecord ? {
+                        _id: teacherRecord._id,
+                        status: teacherRecord.status,
+                        bankDetails: teacherRecord.bankDetails
+                    } : null
+                })
             }
         };
 
