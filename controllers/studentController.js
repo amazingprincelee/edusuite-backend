@@ -156,8 +156,8 @@ export const updateStudent = async (req, res) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    // Validate class level if provided
-    if (classLevel) {
+    // Validate class level if provided and not empty
+    if (classLevel && classLevel.trim() !== "") {
       const classExists = await ClassList.findOne({ level: classLevel });
       if (!classExists) {
         return res.status(400).json({ message: "Invalid class level" });
@@ -188,7 +188,7 @@ export const updateStudent = async (req, res) => {
         middleName: middleName || student.middleName,
         dateOfBirth: dateOfBirth || student.dateOfBirth,
         gender: gender || student.gender,
-        classLevel: classLevel || student.classLevel,
+        classLevel:  classLevel   || student.classLevel,
         section: section || student.section,
         stateOfOrigin: stateOfOrigin || student.stateOfOrigin,
         nationality: nationality || student.nationality,
