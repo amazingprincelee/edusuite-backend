@@ -3,7 +3,8 @@ import {
   getParentChildren, 
   getParentNotifications, 
   getParentPaymentSummary,
-  getParentDashboard 
+  getParentDashboard,
+  getPaymentConfig
 } from "../controllers/parentController.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 
@@ -17,5 +18,6 @@ router.get("/dashboard", getParentDashboard);
 router.get("/children", getParentChildren);
 router.get("/notifications", getParentNotifications);
 router.get("/payment-summary", getParentPaymentSummary);
+router.get("/payment-config", getPaymentConfig);
 
 export default router;

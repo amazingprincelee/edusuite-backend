@@ -6,8 +6,8 @@ const configSchema = new mongoose.Schema({
   flutterwavePublic: {type: String},
   paystackSecret: { type: String},
   paystackPublic: {type: String},
+  activePaymentGateway: { type: String, enum: ["flutterwave", "paystack"], default: "flutterwave" },
   currency: { type: String, default: "NGN" },
-  callbackUrl: { type: String, default: "" }, // global callback
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

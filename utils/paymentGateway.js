@@ -21,7 +21,7 @@ export const createFlutterwavePayment = async (payload) => {
       tx_ref: payload.reference,
       amount: payload.amount,
       currency: config.currency,
-      redirect_url: config.callbackUrl,
+      redirect_url: `${process.env.CLIENT_URL}/payment-status?reference=${payload.reference}`,
       customer: {
         email: payload.email,
         name: payload.name,
@@ -50,7 +50,7 @@ export const createPaystackPayment = async (payload) => {
       reference: payload.reference,
       amount: payload.amount * 100, // Paystack requires kobo
       currency: config.currency,
-      callback_url: config.callbackUrl,
+      callback_url: `${process.env.CLIENT_URL}/payment-status?reference=${payload.reference}`,
       email: payload.email,
       metadata: {
         custom_fields: [

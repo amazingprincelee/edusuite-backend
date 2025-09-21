@@ -2,6 +2,7 @@ import Student from "../models/student.js";
 import Payment from "../models/payment.js";
 import Notification from "../models/notification.js";
 import User from "../models/user.js";
+import Config from "../models/config.js";
 
 // Get parent's children
 export const getParentChildren = async (req, res) => {
@@ -10,7 +11,7 @@ export const getParentChildren = async (req, res) => {
     
     // Find all children of this parent
     const children = await Student.find({ parentId: parentId })
-      .select('firstName surName middleName classLevel section admissionNumber currentSession currentTerm status')
+      .select('firstName surName middleName classLevel section admissionNumber currentSession currentTerm status dateOfBirth gender address stateOfOrigin nationality parentInfo admissionDate studentPhoto')
       .lean();
     
     if (!children || children.length === 0) {
@@ -27,6 +28,38 @@ export const getParentChildren = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching parent children:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
+// Get payment configuration for parents
+export const getPaymentConfig = async (req, res) => {
+  try {
+    const config = await Config.findOne().select('activePaymentGateway currency');
+    
+    if (!config) {
+      return res.status(200).json({
+        success: true,
+        config: {
+          activePaymentGateway: 'flutterwave', // default
+          currency: 'NGN'
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      config: {
+        activePaymentGateway: config.activePaymentGateway || 'flutterwave',
+        currency: config.currency || 'NGN'
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching payment config:", error);
     res.status(500).json({ 
       success: false, 
       message: "Internal Server Error",

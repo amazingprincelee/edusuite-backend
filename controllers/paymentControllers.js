@@ -329,15 +329,32 @@ export const initiatePayment = async (req, res) => {
       term,
       totalAmount,
       amount,
-      method,
       reference,
       email,
       name,
     } = req.body;
 
+    // Get the active payment gateway from configuration
+    const config = await Config.findOne();
+    if (!config) {
+      return res.status(500).json({ 
+        success: false, 
+        message: "Payment configuration not found. Please contact administrator." 
+      });
+    }
+
+    const activeGateway = config.activePaymentGateway || "flutterwave";
     let paymentLink;
 
-    if (method === "flutterwave") {
+    if (activeGateway === "flutterwave") {
+      // Verify Flutterwave configuration
+      if (!config.flutterwaveSecret || !config.flutterwavePublic) {
+        return res.status(500).json({ 
+          success: false, 
+          message: "Flutterwave configuration is incomplete. Please contact administrator." 
+        });
+      }
+
       const response = await createFlutterwavePayment({
         amount,
         reference,
@@ -346,7 +363,15 @@ export const initiatePayment = async (req, res) => {
         description,
       });
       paymentLink = response.data.link;
-    } else if (method === "paystack") {
+    } else if (activeGateway === "paystack") {
+      // Verify Paystack configuration
+      if (!config.paystackSecret || !config.paystackPublic) {
+        return res.status(500).json({ 
+          success: false, 
+          message: "Paystack configuration is incomplete. Please contact administrator." 
+        });
+      }
+
       const response = await createPaystackPayment({
         amount,
         reference,
@@ -356,14 +381,17 @@ export const initiatePayment = async (req, res) => {
       });
       paymentLink = response.data.authorization_url;
     } else {
-      return res.status(400).json({ message: "Invalid payment method" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid payment gateway configuration. Please contact administrator." 
+      });
     }
 
     // ✅ Check if payment exists
     let payment = await Payment.findOne({ studentId, feeType, session, term });
 
     if (payment) {
-      payment.installments.push({ amount, method, reference });
+      payment.installments.push({ amount, method: activeGateway, reference });
       await payment.save();
     } else {
       payment = new Payment({
@@ -373,7 +401,7 @@ export const initiatePayment = async (req, res) => {
         session,
         term,
         totalAmount,
-        installments: [{ amount, method, reference }],
+        installments: [{ amount, method: activeGateway, reference }],
         status: "pending",
       });
       await payment.save();
@@ -410,6 +438,12 @@ export const flutterwaveWebhook = async (req, res) => {
       if (verification.status === "success") {
         const payment = await Payment.findOne({
           "installments.reference": verification.data.tx_ref,
+        }).populate({
+          path: 'studentId',
+          populate: {
+            path: 'parentId',
+            select: 'fullname email phone'
+          }
         });
 
         if (payment) {
@@ -423,6 +457,86 @@ export const flutterwaveWebhook = async (req, res) => {
             installment.approvedAt = new Date();
             await payment.save();
             await generateReceipt(payment._id, installment._id); // Generate receipt after webhook approval
+            
+            // Send real-time notification to parent
+            if (payment.studentId && payment.studentId.parentId) {
+              try {
+                // Create in-app notification
+                const Notification = (await import("../models/notification.js")).default;
+                await Notification.create({
+                  recipient: payment.studentId.parentId._id,
+                  sender: null, // System notification
+                  type: 'payment',
+                  title: 'Payment Confirmed',
+                  message: `Payment of ${verification.data.currency} ${verification.data.amount} for ${payment.studentId.fullname} has been successfully processed via Flutterwave.`,
+                  data: {
+                    studentId: payment.studentId._id,
+                    paymentId: payment._id,
+                    installmentId: installment._id,
+                    amount: verification.data.amount,
+                    currency: verification.data.currency,
+                    reference: verification.data.tx_ref,
+                    gateway: 'flutterwave'
+                  },
+                  priority: 'high',
+                  actionUrl: `/payment-status?reference=${verification.data.tx_ref}`
+                });
+
+                // Send email notification
+                if (payment.studentId.parentId.email) {
+                  const nodemailer = await import('nodemailer');
+                  const emailTransporter = nodemailer.default.createTransporter({
+                    service: 'gmail',
+                    host: 'smtp.gmail.com',
+                    port: 587,
+                    secure: false,
+                    auth: {
+                      user: process.env.EMAIL_USER,
+                      pass: process.env.EMAIL_PASS
+                    }
+                  });
+
+                  const emailContent = {
+                    from: process.env.EMAIL_USER,
+                    to: payment.studentId.parentId.email,
+                    subject: 'Payment Confirmation - School Management System',
+                    html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #28a745;">Payment Confirmed!</h2>
+                        <p>Dear ${payment.studentId.parentId.fullname},</p>
+                        <p>We are pleased to confirm that your payment has been successfully processed.</p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                          <h3>Payment Details:</h3>
+                          <p><strong>Student:</strong> ${payment.studentId.fullname}</p>
+                          <p><strong>Amount:</strong> ${verification.data.currency} ${verification.data.amount}</p>
+                          <p><strong>Reference:</strong> ${verification.data.tx_ref}</p>
+                          <p><strong>Payment Gateway:</strong> Flutterwave</p>
+                          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                        </div>
+                        
+                        <p>You can view your payment status and download your receipt by clicking the link below:</p>
+                        <a href="${process.env.CLIENT_URL}/payment-status?reference=${verification.data.tx_ref}" 
+                           style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                          View Payment Status
+                        </a>
+                        
+                        <p style="margin-top: 20px;">Thank you for your payment!</p>
+                        <p>Best regards,<br>School Management System</p>
+                      </div>
+                    `
+                  };
+
+                  await emailTransporter.sendMail(emailContent);
+                  console.log(`Payment confirmation email sent to ${payment.studentId.parentId.email}`);
+                }
+
+                console.log(`Real-time notification sent for Flutterwave payment: ${verification.data.tx_ref}`);
+              } catch (notificationError) {
+                console.error('Error sending payment notification:', notificationError);
+                // Don't fail the webhook if notification fails
+              }
+            }
           }
         }
       }
@@ -458,6 +572,12 @@ export const paystackWebhook = async (req, res) => {
       if (verification.status && verification.data.status === "success") {
         const payment = await Payment.findOne({
           "installments.reference": reference,
+        }).populate({
+          path: 'studentId',
+          populate: {
+            path: 'parentId',
+            select: 'fullname email phone'
+          }
         });
 
         if (payment) {
@@ -471,6 +591,86 @@ export const paystackWebhook = async (req, res) => {
             installment.approvedAt = new Date();
             await payment.save();
             await generateReceipt(payment._id, installment._id); // Generate receipt after webhook approval
+            
+            // Send real-time notification to parent
+            if (payment.studentId && payment.studentId.parentId) {
+              try {
+                // Create in-app notification
+                const Notification = (await import("../models/notification.js")).default;
+                await Notification.create({
+                  recipient: payment.studentId.parentId._id,
+                  sender: null, // System notification
+                  type: 'payment',
+                  title: 'Payment Confirmed',
+                  message: `Payment of ${verification.data.currency} ${verification.data.amount / 100} for ${payment.studentId.fullname} has been successfully processed via Paystack.`,
+                  data: {
+                    studentId: payment.studentId._id,
+                    paymentId: payment._id,
+                    installmentId: installment._id,
+                    amount: verification.data.amount / 100,
+                    currency: verification.data.currency,
+                    reference: reference,
+                    gateway: 'paystack'
+                  },
+                  priority: 'high',
+                  actionUrl: `/payment-status?reference=${reference}`
+                });
+
+                // Send email notification
+                if (payment.studentId.parentId.email) {
+                  const nodemailer = await import('nodemailer');
+                  const emailTransporter = nodemailer.default.createTransporter({
+                    service: 'gmail',
+                    host: 'smtp.gmail.com',
+                    port: 587,
+                    secure: false,
+                    auth: {
+                      user: process.env.EMAIL_USER,
+                      pass: process.env.EMAIL_PASS
+                    }
+                  });
+
+                  const emailContent = {
+                    from: process.env.EMAIL_USER,
+                    to: payment.studentId.parentId.email,
+                    subject: 'Payment Confirmation - School Management System',
+                    html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #28a745;">Payment Confirmed!</h2>
+                        <p>Dear ${payment.studentId.parentId.fullname},</p>
+                        <p>We are pleased to confirm that your payment has been successfully processed.</p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                          <h3>Payment Details:</h3>
+                          <p><strong>Student:</strong> ${payment.studentId.fullname}</p>
+                          <p><strong>Amount:</strong> ${verification.data.currency} ${verification.data.amount / 100}</p>
+                          <p><strong>Reference:</strong> ${reference}</p>
+                          <p><strong>Payment Gateway:</strong> Paystack</p>
+                          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                        </div>
+                        
+                        <p>You can view your payment status and download your receipt by clicking the link below:</p>
+                        <a href="${process.env.CLIENT_URL}/payment-status?reference=${reference}" 
+                           style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                          View Payment Status
+                        </a>
+                        
+                        <p style="margin-top: 20px;">Thank you for your payment!</p>
+                        <p>Best regards,<br>School Management System</p>
+                      </div>
+                    `
+                  };
+
+                  await emailTransporter.sendMail(emailContent);
+                  console.log(`Payment confirmation email sent to ${payment.studentId.parentId.email}`);
+                }
+
+                console.log(`Real-time notification sent for Paystack payment: ${reference}`);
+              } catch (notificationError) {
+                console.error('Error sending payment notification:', notificationError);
+                // Don't fail the webhook if notification fails
+              }
+            }
           }
         }
       }
@@ -682,7 +882,13 @@ export const approvePayment = async (req, res) => {
     const payment = await Payment.findById(paymentId).populate(
       "studentId",
       "firstName surName admissionNumber classLevel section"
-    ).populate('installments.approvedBy', 'fullname');
+    ).populate('installments.approvedBy', 'fullname').populate({
+      path: 'studentId',
+      populate: {
+        path: 'parentId',
+        select: 'fullname email phone'
+      }
+    });
 
     if (!payment) {
       return res
@@ -712,6 +918,86 @@ export const approvePayment = async (req, res) => {
     installment.approvedAt = new Date();
 
     await payment.save();
+
+    // Send real-time notification to parent for manual approval
+    if (payment.studentId && payment.studentId.parentId) {
+      try {
+        // Create in-app notification
+        const Notification = (await import("../models/notification.js")).default;
+        await Notification.create({
+          recipient: payment.studentId.parentId._id,
+          sender: adminId,
+          type: 'payment',
+          title: 'Payment Approved',
+          message: `Payment of ${installment.amount} for ${payment.studentId.firstName} ${payment.studentId.surName} has been approved by admin.`,
+          data: {
+            studentId: payment.studentId._id,
+            paymentId: payment._id,
+            installmentId: installment._id,
+            amount: installment.amount,
+            feeType: payment.feeType,
+            approvalType: 'manual'
+          },
+          priority: 'high',
+          actionUrl: `/payment-receipt/${payment._id}/${installment._id}`
+        });
+
+        // Send email notification
+        if (payment.studentId.parentId.email) {
+          const nodemailer = await import('nodemailer');
+          const emailTransporter = nodemailer.default.createTransporter({
+            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            auth: {
+              user: process.env.EMAIL_USER,
+              pass: process.env.EMAIL_PASS
+            }
+          });
+
+          const emailContent = {
+            from: process.env.EMAIL_USER,
+            to: payment.studentId.parentId.email,
+            subject: 'Payment Approved - School Management System',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #28a745;">Payment Approved!</h2>
+                <p>Dear ${payment.studentId.parentId.fullname},</p>
+                <p>We are pleased to inform you that your payment has been approved by our admin team.</p>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                  <h3>Payment Details:</h3>
+                  <p><strong>Student:</strong> ${payment.studentId.firstName} ${payment.studentId.surName}</p>
+                  <p><strong>Amount:</strong> ₦${installment.amount}</p>
+                  <p><strong>Fee Type:</strong> ${payment.feeType}</p>
+                  <p><strong>Session:</strong> ${payment.session}</p>
+                  <p><strong>Term:</strong> ${payment.term}</p>
+                  <p><strong>Approved Date:</strong> ${new Date().toLocaleDateString()}</p>
+                </div>
+                
+                <p>You can download your payment receipt by clicking the link below:</p>
+                <a href="${process.env.CLIENT_URL}/payment-receipt/${payment._id}/${installment._id}" 
+                   style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                  Download Receipt
+                </a>
+                
+                <p style="margin-top: 20px;">Thank you for your payment!</p>
+                <p>Best regards,<br>School Management System</p>
+              </div>
+            `
+          };
+
+          await emailTransporter.sendMail(emailContent);
+          console.log(`Payment approval email sent to ${payment.studentId.parentId.email}`);
+        }
+
+        console.log(`Real-time notification sent for manual payment approval: ${payment._id}`);
+      } catch (notificationError) {
+        console.error('Error sending payment approval notification:', notificationError);
+        // Don't fail the approval if notification fails
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -796,6 +1082,70 @@ export const getReceiptData = async (req, res) => {
       success: false,
       message: "Internal Server Error",
       error: process.env.NODE_ENV === "development" ? error.message : "Something went wrong",
+    });
+  }
+};
+
+// New endpoint to check payment status by reference
+export const getPaymentStatus = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment reference is required"
+      });
+    }
+
+    // Find payment by reference
+    const payment = await Payment.findOne({ reference })
+      .populate('studentId', 'fullname email')
+      .populate('installments.approvedBy', 'fullname');
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
+    }
+
+    // Find the specific installment that matches this reference
+    const installment = payment.installments.find(inst => 
+      inst.reference === reference
+    );
+
+    if (!installment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment installment not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      payment: {
+        reference: installment.reference,
+        amount: installment.amount,
+        status: installment.status,
+        method: installment.method,
+        paidAt: installment.paidAt,
+        student: {
+          name: payment.studentId.fullname,
+          email: payment.studentId.email
+        },
+        feeType: payment.feeType,
+        description: payment.description,
+        session: payment.session,
+        term: payment.term
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching payment status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : "Something went wrong"
     });
   }
 };

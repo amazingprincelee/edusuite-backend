@@ -6,26 +6,26 @@ export const addFlutterwaveConfig =  async (req, res) => {
 
         const flutterwaveSecret = req.body.flutterwaveSecret;
         const flutterwavePublic = req.body.flutterwavePublic;
-        const callbackUrl = req.body.callbackUrl;
+        const webhookUrl = req.body.webhookUrl;
 
-        console.log({flutterwavePublic, flutterwaveSecret, callbackUrl});
+        console.log({flutterwavePublic, flutterwaveSecret, webhookUrl});
         
 
-        if(!flutterwaveSecret && !callbackUrl && !flutterwavePublic){
-            return res.status(404).json({message:"flutterwave secret and callBack url is required"})
+        if(!flutterwaveSecret && !webhookUrl && !flutterwavePublic){
+            return res.status(404).json({message:"flutterwave secret and webhook url is required"})
         }
 
       const newConfig = new Config({
         flutterwaveSecret: flutterwaveSecret,
         flutterwavePublic: flutterwavePublic,
-        callbackUrl: callbackUrl,
+        webhookUrl: webhookUrl,
       });
 
       await newConfig.save();
        
 
          res.status(200).json({
-      message: "flutterwave secret and callback url updated successfully",
+      message: "flutterwave secret and webhook url updated successfully",
       newConfig,
     });
         
@@ -39,22 +39,20 @@ export const addPaystackConfig =  async (req, res) => {
 
         const paystackSecret = req.body.paystackSecret;
         const paystackPublic = req.body.paystackPublic;
-        const callbackUrl = req.body.callbackUrl;
 
-        if(!paystackSecret && callbackUrl){
-            return res.status(404).json({message:"paystack secret and callback url is required"})
+        if(!paystackSecret){
+            return res.status(404).json({message:"paystack secret is required"})
         }
 
         const newConfig = new Config({
             paystackSecret: paystackSecret,
-            paystackPublic: paystackPublic,
-            callbackUrl: callbackUrl
+            paystackPublic: paystackPublic
         });
 
         await newConfig.save();
 
          res.status(200).json({
-      message: "paystack secret and callback url updated successfully",
+      message: "paystack secret updated successfully",
       newConfig,
     });
         
@@ -88,7 +86,6 @@ export const updateFlutterwaveConfig = async (req, res)=>{
       try {
         const flutterwaveSecret = req.body.flutterwaveSecret;
         const flutterwavePublic = req.body.flutterwavePublic;
-        const callbackUrl = req.body.callbackUrl;
 
 
         const existingConfig = await Config.findOne();
@@ -97,7 +94,6 @@ export const updateFlutterwaveConfig = async (req, res)=>{
 
             existingConfig.flutterwaveSecret = flutterwaveSecret || existingConfig.flutterwaveSecret ;
         existingConfig.flutterwavePublic = flutterwavePublic || existingConfig.flutterwavePublic;
-        existingConfig.callbackUrl = callbackUrl || existingConfig.callbackUrl ;
 
         await existingConfig.save()
 
@@ -108,7 +104,6 @@ export const updateFlutterwaveConfig = async (req, res)=>{
       const newConfig = new Config({
         flutterwaveSecret,
         flutterwavePublic,
-        callbackUrl,
       });
 
       await newConfig.save();
@@ -131,14 +126,12 @@ export const updatePaystackConfig = async (req, res) => {
   try {
     const paystackSecret = req.body.paystackSecret;
     const paystackPublic = req.body.paystackPublic;
-    const callbackUrl = req.body.callbackUrl;
 
     const existingConfig = await Config.findOne();
 
     if (existingConfig) {
       existingConfig.paystackSecret = paystackSecret || existingConfig.paystackSecret;
       existingConfig.paystackPublic = paystackPublic || existingConfig.paystackPublic;
-      existingConfig.callbackUrl = callbackUrl || existingConfig.callbackUrl;
       existingConfig.updatedAt = Date.now();
 
       await existingConfig.save();
@@ -153,13 +146,59 @@ export const updatePaystackConfig = async (req, res) => {
       const newConfig = new Config({
         paystackSecret,
         paystackPublic,
-        callbackUrl,
       });
 
       await newConfig.save();
 
       res.status(201).json({
         message: "Paystack config created successfully",
+        success: true,
+        config: newConfig,
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const updateActivePaymentGateway = async (req, res) => {
+  try {
+    const { activePaymentGateway } = req.body;
+
+    // Validate the gateway value
+    if (!activePaymentGateway || !['flutterwave', 'paystack'].includes(activePaymentGateway)) {
+      return res.status(400).json({
+        message: "Invalid payment gateway. Must be 'flutterwave' or 'paystack'",
+        success: false,
+      });
+    }
+
+    const existingConfig = await Config.findOne();
+
+    if (existingConfig) {
+      existingConfig.activePaymentGateway = activePaymentGateway;
+      existingConfig.updatedAt = Date.now();
+
+      await existingConfig.save();
+
+      res.status(200).json({
+        message: "Active payment gateway updated successfully",
+        success: true,
+        config: existingConfig,
+      });
+    } else {
+      // Create new config if none exists
+      const newConfig = new Config({
+        activePaymentGateway,
+      });
+
+      await newConfig.save();
+
+      res.status(201).json({
+        message: "Active payment gateway config created successfully",
         success: true,
         config: newConfig,
       });
