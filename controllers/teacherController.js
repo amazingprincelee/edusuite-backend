@@ -195,3 +195,52 @@ export const getTeacherById = async (req, res) => {
 
     
 }
+
+export const getTeacherDashboard = async (req, res) => {
+  try {
+    // Get teacher ID from authenticated user
+    const teacherId = req.user.id;
+    
+    // Verify the user is a teacher
+    const teacher = await User.findById(teacherId);
+    if (!teacher || teacher.role !== "teacher") {
+      return res.status(403).json({ message: "Access denied. Teacher role required." });
+    }
+
+    // Mock dashboard data - you can replace this with actual database queries
+    const stats = {
+      totalClasses: 5,
+      totalStudents: 120,
+      pendingResults: 8,
+      completedExams: 12
+    };
+
+    const recentActivities = [
+      {
+        id: 1,
+        type: "exam",
+        description: "Math Quiz submitted by Class 10A",
+        timestamp: new Date().toISOString()
+      },
+      {
+        id: 2,
+        type: "assignment",
+        description: "Science assignment graded for Class 9B",
+        timestamp: new Date(Date.now() - 86400000).toISOString() // 1 day ago
+      }
+    ];
+
+    res.status(200).json({
+      message: "Dashboard data retrieved successfully",
+      stats,
+      recentActivities
+    });
+
+  } catch (error) {
+    console.error("Error fetching teacher dashboard:", error);
+    res.status(500).json({ 
+      message: "Internal Server Error", 
+      error: error.message 
+    });
+  }
+};

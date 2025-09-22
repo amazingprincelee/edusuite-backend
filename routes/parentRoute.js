@@ -18,6 +18,5 @@ router.get("/dashboard", getParentDashboard);
 router.get("/children", getParentChildren);
 router.get("/notifications", getParentNotifications);
 router.get("/payment-summary", getParentPaymentSummary);
-router.get("/payment-config", getPaymentConfig);
 
 export default router;
