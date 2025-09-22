@@ -61,17 +61,25 @@ export const getAllParents = async (req, res) => {
 
 export const getParentsWithChildren = async (req, res) => {
   try {
+    console.log("getParentsWithChildren controller started");
+    console.log("Request user:", req.user ? `${req.user.fullname} (${req.user.role})` : "No user");
+    
     // Find all parents
+    console.log("Searching for parents...");
     const parents = await User.find({ role: "parent" }).lean();
+    console.log("Found parents count:", parents ? parents.length : 0);
 
     if (!parents || parents.length === 0) {
+      console.log("No parents found, returning 404");
       return res.status(404).json({ message: "No parents found" });
     }
 
+    console.log("Processing parents with children...");
     // Attach children to each parent
     const parentsWithChildren = await Promise.all(
       parents.map(async (parent) => {
         const children = await Student.find({ parentId: parent._id }).lean();
+        console.log(`Parent ${parent.fullname} has ${children.length} children`);
         return {
           ...parent,
           children, // attach the student's list here
@@ -79,6 +87,7 @@ export const getParentsWithChildren = async (req, res) => {
       })
     );
 
+    console.log("Sending successful response with", parentsWithChildren.length, "parents");
     res.status(200).json({
       success: true,
       count: parentsWithChildren.length,
