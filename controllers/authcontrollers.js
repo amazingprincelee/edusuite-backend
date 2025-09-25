@@ -23,7 +23,7 @@ export const login = async (req, res)=> {
        
         
 
-        const user = await User.findOne({$or: [{phone: username}, {email: username}]});
+        const user = await User.findOne({$or: [{phone: username}, {email: username}, {username: username}]});
         
 
         if(!user){
@@ -53,54 +53,95 @@ export const register = async (req, res) => {
 
     try {
 
-        const {fullname, phone, address, email, password, role, gender, 
+        const {fullname, phone, address, email, password, role, gender, username,
                // Teacher-specific fields
                salary, designation, subjects, status, bankName, bankAccount, accountName} = req.body;
 
-        const user = await User.findOne({
+        // Check for existing user by phone, email, or username
+        const existingUser = await User.findOne({
             $or: [
-                {email: email},
-                {phone: phone}
-            ]
-        })
+                {email: email && email.trim() !== '' ? email : null},
+                {phone: phone},
+                {username: username && username.trim() !== '' ? username : null}
+            ].filter(condition => condition !== null && Object.values(condition)[0] !== null)
+        });
 
-        if(user){
+        if(existingUser){
            return res.status(400).json({message: "Already Existing user"})
         };
 
+        let actualPassword = password;
         let generatedPassword = null;
         let emailSent = false;
 
-        // Store plain password for teachers and parents to send via email
-        if (role === "parent" || role === "teacher") {
+        // Auto-generate password for teachers and parents if not provided
+        if ((role === "parent" || role === "teacher") && !password) {
+            // Generate password using first name + last 4 digits of phone
+            const firstName = fullname.split(' ')[0];
+            const phoneLastFour = phone.slice(-4);
+            actualPassword = `${firstName}${phoneLastFour}`;
+            generatedPassword = actualPassword;
+            
+            // Send credentials via email if email is provided
+            if (email && email.trim() !== '') {
+                try {
+                    const userData = { fullname, phone, email, address, gender, role };
+                    await sendUserCredentials(userData, actualPassword);
+                    emailSent = true;
+                    
+                    console.log(`Credentials email sent to ${role} ${fullname}: Success`);
+                } catch (emailError) {
+                    console.error(`Failed to send welcome email to ${role}:`, emailError);
+                    emailSent = false;
+                    // Continue with registration even if email fails
+                }
+            }
+        } else if (role === "parent" || role === "teacher") {
+            // If password is provided for parent/teacher, treat it as generated password
             generatedPassword = password;
             
-            try {
-                const userData = { fullname, phone, email, address, gender, role };
-                await sendUserCredentials(userData, password);
-                emailSent = true;
-                
-                console.log(`Credentials email sent to ${role} ${fullname}: Success`);
-            } catch (emailError) {
-                console.error(`Failed to send welcome email to ${role}:`, emailError);
-                emailSent = false;
-                // Continue with registration even if email fails
+            if (email && email.trim() !== '') {
+                try {
+                    const userData = { fullname, phone, email, address, gender, role };
+                    await sendUserCredentials(userData, password);
+                    emailSent = true;
+                    
+                    console.log(`Credentials email sent to ${role} ${fullname}: Success`);
+                } catch (emailError) {
+                    console.error(`Failed to send welcome email to ${role}:`, emailError);
+                    emailSent = false;
+                    // Continue with registration even if email fails
+                }
             }
         }
 
-        const hashedPassword = await bcrypt.hash(password, saltRound);
+        // Ensure we have a password
+        if (!actualPassword) {
+            return res.status(400).json({message: "Password is required"});
+        }
+
+        const hashedPassword = await bcrypt.hash(actualPassword, saltRound);
 
         // Prepare user data
         const userData = {
             fullname: fullname,
             phone: phone,
-            email: email, 
             address: address,
             gender: gender,
             password: hashedPassword,
             generatedParentPassword: generatedPassword, // Store for both teachers and parents
             role: role
         };
+
+        // Add email only if provided and not empty
+        if (email && email.trim() !== '') {
+            userData.email = email.trim();
+        }
+
+        // Add username only if provided and not empty
+        if (username && username.trim() !== '') {
+            userData.username = username.trim();
+        }
 
         // Add teacher-specific fields if role is teacher
         if (role === 'teacher') {
@@ -167,6 +208,10 @@ export const register = async (req, res) => {
 
         // Add role-specific information to response for teachers and parents
         if (role === 'parent' || role === 'teacher') {
+            response.parentInfo = {
+                generatedPassword: generatedPassword,
+                welcomeEmailSent: emailSent
+            };
             response.credentialsInfo = {
                 plainPassword: generatedPassword,
                 welcomeEmailSent: emailSent

@@ -18,7 +18,7 @@ export const isAuthenticated = async (req, res, next) => {
 
     // get token
     const token = authHeader.split(" ")[1];
-    console.log("Extracted token:", token ? "Token present" : "No token");
+    
 
     
     
@@ -30,7 +30,7 @@ export const isAuthenticated = async (req, res, next) => {
 
     //decode token
     const decoded = jwt.verify(token, JWT_SECRET)
-    console.log("Decoded token user ID:", decoded.id);
+   
 
     //get the user
     const user = await User.findById(decoded.id).select("-password");
