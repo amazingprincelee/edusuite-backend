@@ -4,6 +4,7 @@ import Teacher from "../models/teachers.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sendUserCredentials } from "../utils/node-mailer.js";
+import { generatePassword } from "../utils/autoGeneratePassword.js"
 
 const saltRound = 10
 const JWT_SECRET =  process.env.JWT_SECRET;
